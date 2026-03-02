@@ -1,0 +1,1145 @@
+//@version=6
+indicator("⚜️ 𝐐𝐮𝐚𝐧𝐭𝐋𝐚𝐠 ⚜️", overlay=true, max_bars_back=5000, scale=scale.left)
+
+// Import colors library
+import TheTradingSpiderMan/ColorsLibrary/2 as CLR
+
+// Inputs
+secondaryAssetInput = input.symbol("(FRED:M2SL+ECONOMICS:EUM2*FX:EURUSD+ECONOMICS:JPM2/FX:USDJPY+ECONOMICS:CNM2/CAPITALCOM:USDCNH)/1000000000000", "Secondary Asset")
+mainLag = input.int(50, "Main Lag (Bars)", minval=1)
+lagDeviation = input.int(10, "Lag Deviation (Bars)", minval=1)
+numDeviations = input.int(5, "Number of Deviations", minval=0, maxval=5, step=1)
+
+// Color theme selection
+colorTheme = input.string("DEFAULT", "Color Theme", options=["DEFAULT", "MONO", "VAPOR", "NEON", "OCEAN", "SUNSET", "FOREST", "CANDY", "FIRE", "ICE"])
+
+// Color inverse toggle
+inverseColors = input.bool(false, "Inverse Colors (swap before/after)")
+
+// Opacity controls
+lineOpacity = input.int(50, "Line Opacity", minval=0, maxval=100)
+fillOpacity = input.int(50, "Fill Opacity", minval=0, maxval=100)
+opacityStep = input.float(5.0, "Opacity Step", minval=0.0, maxval=50.0, step=0.5)
+
+// Fetch asset data
+secondaryAsset = request.security(secondaryAssetInput, timeframe.period, close)
+
+// Calculate deviated lags
+upperLag1 = mainLag + lagDeviation * 1
+upperLag2 = mainLag + lagDeviation * 2
+upperLag3 = mainLag + lagDeviation * 3
+upperLag4 = mainLag + lagDeviation * 4
+upperLag5 = mainLag + lagDeviation * 5
+
+lowerLag1 = mainLag - lagDeviation * 1
+lowerLag2 = mainLag - lagDeviation * 2
+lowerLag3 = mainLag - lagDeviation * 3
+lowerLag4 = mainLag - lagDeviation * 4
+lowerLag5 = mainLag - lagDeviation * 5
+
+// Transition points for plotting
+transitionMain = last_bar_index - mainLag
+
+transitionUpper1 = last_bar_index - upperLag1
+transitionUpper2 = last_bar_index - upperLag2
+transitionUpper3 = last_bar_index - upperLag3
+transitionUpper4 = last_bar_index - upperLag4
+transitionUpper5 = last_bar_index - upperLag5
+
+transitionLower1 = last_bar_index - lowerLag1
+transitionLower2 = last_bar_index - lowerLag2
+transitionLower3 = last_bar_index - lowerLag3
+transitionLower4 = last_bar_index - lowerLag4
+transitionLower5 = last_bar_index - lowerLag5
+
+// Theme-based color functions - returns color based on theme
+bullColor(theme) =>
+    switch theme
+        "DEFAULT" => CLR.defaultBull()
+        "MONO" => CLR.monoBull()
+        "VAPOR" => CLR.vaporBull()
+        "NEON" => CLR.neonBull()
+        "OCEAN" => CLR.oceanBull()
+        "SUNSET" => CLR.sunsetBull()
+        "FOREST" => CLR.forestBull()
+        "CANDY" => CLR.candyBull()
+        "FIRE" => CLR.fireBull()
+        => CLR.iceBull()
+
+bearColor(theme) =>
+    switch theme
+        "DEFAULT" => CLR.defaultBear()
+        "MONO" => CLR.monoBear()
+        "VAPOR" => CLR.vaporBear()
+        "NEON" => CLR.neonBear()
+        "OCEAN" => CLR.oceanBear()
+        "SUNSET" => CLR.sunsetBear()
+        "FOREST" => CLR.forestBear()
+        "CANDY" => CLR.candyBear()
+        "FIRE" => CLR.fireBear()
+        => CLR.iceBear()
+
+// Color assignment based on inverse toggle
+// When inverseColors = false: historical = bull, projected = bear
+// When inverseColors = true: historical = bear, projected = bull
+histColor = inverseColors ? bearColor(colorTheme) : bullColor(colorTheme)
+projColor = inverseColors ? bullColor(colorTheme) : bearColor(colorTheme)
+
+// Plot HISTORICAL lines and fills
+mainHist = plot(secondaryAsset[mainLag], "Main Historical", color=histColor, linewidth=4, display=display.pane)
+
+// Opacity calculations (capped at 80 to prevent invisible lines)
+histOp1 = math.min(lineOpacity, 80)
+histOp2 = math.min(lineOpacity + int(opacityStep * 1), 80)
+histOp3 = math.min(lineOpacity + int(opacityStep * 2), 80)
+histOp4 = math.min(lineOpacity + int(opacityStep * 3), 80)
+histOp5 = math.min(lineOpacity + int(opacityStep * 4), 80)
+
+projOp1 = math.min(lineOpacity, 80)
+projOp2 = math.min(lineOpacity + int(opacityStep * 1), 80)
+projOp3 = math.min(lineOpacity + int(opacityStep * 2), 80)
+projOp4 = math.min(lineOpacity + int(opacityStep * 3), 80)
+projOp5 = math.min(lineOpacity + int(opacityStep * 4), 80)
+
+// Header opacity (brighter for deviation headers)
+headerOp1 = math.min(histOp1 - 30, 0)
+headerOp2 = math.min(histOp2 - 30, 0)
+headerOp3 = math.min(histOp3 - 30, 0)
+headerOp4 = math.min(histOp4 - 30, 0)
+headerOp5 = math.min(histOp5 - 30, 0)
+
+// Upper deviations (conditionally plotted based on numDeviations)
+upperHist1 = plot(numDeviations >= 1 ? secondaryAsset[upperLag1] : na, "Upper Historical 1", color=color.new(histColor, histOp1), linewidth=3, display=display.pane)
+upperHist2 = plot(numDeviations >= 2 ? secondaryAsset[upperLag2] : na, "Upper Historical 2", color=color.new(histColor, histOp2), linewidth=2, display=display.pane)
+upperHist3 = plot(numDeviations >= 3 ? secondaryAsset[upperLag3] : na, "Upper Historical 3", color=color.new(histColor, histOp3), linewidth=1, display=display.pane)
+upperHist4 = plot(numDeviations >= 4 ? secondaryAsset[upperLag4] : na, "Upper Historical 4", color=color.new(histColor, histOp4), linewidth=1, display=display.pane)
+upperHist5 = plot(numDeviations >= 5 ? secondaryAsset[upperLag5] : na, "Upper Historical 5", color=color.new(histColor, histOp5), linewidth=1, display=display.pane)
+
+// Lower deviations (conditionally plotted based on numDeviations)
+lowerHist1 = plot(numDeviations >= 1 ? secondaryAsset[lowerLag1] : na, "Lower Historical 1", color=color.new(histColor, histOp1), linewidth=3, display=display.pane)
+lowerHist2 = plot(numDeviations >= 2 ? secondaryAsset[lowerLag2] : na, "Lower Historical 2", color=color.new(histColor, histOp2), linewidth=2, display=display.pane)
+lowerHist3 = plot(numDeviations >= 3 ? secondaryAsset[lowerLag3] : na, "Lower Historical 3", color=color.new(histColor, histOp3), linewidth=1, display=display.pane)
+lowerHist4 = plot(numDeviations >= 4 ? secondaryAsset[lowerLag4] : na, "Lower Historical 4", color=color.new(histColor, histOp4), linewidth=1, display=display.pane)
+lowerHist5 = plot(numDeviations >= 5 ? secondaryAsset[lowerLag5] : na, "Lower Historical 5", color=color.new(histColor, histOp5), linewidth=1, display=display.pane)
+
+// Historical fill opacity calculations (capped at 85)
+histFillOp1 = math.min(fillOpacity, 85)
+histFillOp2 = math.min(fillOpacity + int(opacityStep * 1), 85)
+histFillOp3 = math.min(fillOpacity + int(opacityStep * 2), 85)
+histFillOp4 = math.min(fillOpacity + int(opacityStep * 3), 85)
+histFillOp5 = math.min(fillOpacity + int(opacityStep * 4), 85)
+
+// Historical fills (conditional)
+fill(mainHist, upperHist1, color=numDeviations >= 1 ? color.new(histColor, histFillOp1) : na, title="Upper Fill 1")
+fill(upperHist1, upperHist2, color=numDeviations >= 2 ? color.new(histColor, histFillOp2) : na, title="Upper Fill 2")
+fill(upperHist2, upperHist3, color=numDeviations >= 3 ? color.new(histColor, histFillOp3) : na, title="Upper Fill 3")
+fill(upperHist3, upperHist4, color=numDeviations >= 4 ? color.new(histColor, histFillOp4) : na, title="Upper Fill 4")
+fill(upperHist4, upperHist5, color=numDeviations >= 5 ? color.new(histColor, histFillOp5) : na, title="Upper Fill 5")
+fill(mainHist, lowerHist1, color=numDeviations >= 1 ? color.new(histColor, histFillOp1) : na, title="Lower Fill 1")
+fill(lowerHist1, lowerHist2, color=numDeviations >= 2 ? color.new(histColor, histFillOp2) : na, title="Lower Fill 2")
+fill(lowerHist2, lowerHist3, color=numDeviations >= 3 ? color.new(histColor, histFillOp3) : na, title="Lower Fill 3")
+fill(lowerHist3, lowerHist4, color=numDeviations >= 4 ? color.new(histColor, histFillOp4) : na, title="Lower Fill 4")
+fill(lowerHist4, lowerHist5, color=numDeviations >= 5 ? color.new(histColor, histFillOp5) : na, title="Lower Fill 5")
+
+// Plot PROJECTED lines and store references
+mainProj = plot(bar_index >= transitionMain ? secondaryAsset : na, "Main Projection",
+  color=projColor, linewidth=4, offset=mainLag, display=display.pane)
+
+// Upper projections (conditional)
+upperProj1 = plot(numDeviations >= 1 and bar_index >= transitionUpper1 ? secondaryAsset : na, "Upper Deviation 1",
+  color=color.new(projColor, projOp1), linewidth=3, offset=upperLag1, display=display.pane)
+upperProj2 = plot(numDeviations >= 2 and bar_index >= transitionUpper2 ? secondaryAsset : na, "Upper Deviation 2",
+  color=color.new(projColor, projOp2), linewidth=2, offset=upperLag2, display=display.pane)
+upperProj3 = plot(numDeviations >= 3 and bar_index >= transitionUpper3 ? secondaryAsset : na, "Upper Deviation 3",
+  color=color.new(projColor, projOp3), linewidth=1, offset=upperLag3, display=display.pane)
+upperProj4 = plot(numDeviations >= 4 and bar_index >= transitionUpper4 ? secondaryAsset : na, "Upper Deviation 4",
+  color=color.new(projColor, projOp4), linewidth=1, offset=upperLag4, display=display.pane)
+upperProj5 = plot(numDeviations >= 5 and bar_index >= transitionUpper5 ? secondaryAsset : na, "Upper Deviation 5",
+  color=color.new(projColor, projOp5), linewidth=1, offset=upperLag5, display=display.pane)
+
+// Lower projections (conditional)
+lowerProj1 = plot(numDeviations >= 1 and bar_index >= transitionLower1 ? secondaryAsset : na, "Lower Deviation 1",
+  color=color.new(projColor, projOp1), linewidth=3, offset=lowerLag1, display=display.pane)
+lowerProj2 = plot(numDeviations >= 2 and bar_index >= transitionLower2 ? secondaryAsset : na, "Lower Deviation 2",
+  color=color.new(projColor, projOp2), linewidth=2, offset=lowerLag2, display=display.pane)
+lowerProj3 = plot(numDeviations >= 3 and bar_index >= transitionLower3 ? secondaryAsset : na, "Lower Deviation 3",
+  color=color.new(projColor, projOp3), linewidth=1, offset=lowerLag3, display=display.pane)
+lowerProj4 = plot(numDeviations >= 4 and bar_index >= transitionLower4 ? secondaryAsset : na, "Lower Deviation 4",
+  color=color.new(projColor, projOp4), linewidth=1, offset=lowerLag4, display=display.pane)
+lowerProj5 = plot(numDeviations >= 5 and bar_index >= transitionLower5 ? secondaryAsset : na, "Lower Deviation 5",
+  color=color.new(projColor, projOp5), linewidth=1, offset=lowerLag5, display=display.pane)
+
+// Projected fill opacity calculations (capped at 85)
+projFillOp1 = math.min(fillOpacity, 85)
+projFillOp2 = math.min(fillOpacity + int(opacityStep * 1), 85)
+projFillOp3 = math.min(fillOpacity + int(opacityStep * 2), 85)
+projFillOp4 = math.min(fillOpacity + int(opacityStep * 3), 85)
+projFillOp5 = math.min(fillOpacity + int(opacityStep * 4), 85)
+
+// Projected fills (conditional)
+fill(mainProj, upperProj1, color=numDeviations >= 1 ? color.new(projColor, projFillOp1) : na, title="Upper Proj Fill 1")
+fill(upperProj1, upperProj2, color=numDeviations >= 2 ? color.new(projColor, projFillOp2) : na, title="Upper Proj Fill 2")
+fill(upperProj2, upperProj3, color=numDeviations >= 3 ? color.new(projColor, projFillOp3) : na, title="Upper Proj Fill 3")
+fill(upperProj3, upperProj4, color=numDeviations >= 4 ? color.new(projColor, projFillOp4) : na, title="Upper Proj Fill 4")
+fill(upperProj4, upperProj5, color=numDeviations >= 5 ? color.new(projColor, projFillOp5) : na, title="Upper Proj Fill 5")
+fill(mainProj, lowerProj1, color=numDeviations >= 1 ? color.new(projColor, projFillOp1) : na, title="Lower Proj Fill 1")
+fill(lowerProj1, lowerProj2, color=numDeviations >= 2 ? color.new(projColor, projFillOp2) : na, title="Lower Proj Fill 2")
+fill(lowerProj2, lowerProj3, color=numDeviations >= 3 ? color.new(projColor, projFillOp3) : na, title="Lower Proj Fill 3")
+fill(lowerProj3, lowerProj4, color=numDeviations >= 4 ? color.new(projColor, projFillOp4) : na, title="Lower Proj Fill 4")
+fill(lowerProj4, lowerProj5, color=numDeviations >= 5 ? color.new(projColor, projFillOp5) : na, title="Lower Proj Fill 5")
+
+// ============================================================================
+// Correlation Analysis Table
+// ============================================================================
+
+// Table settings
+GROUP_CORR = '⚜️ 𝐂𝐨𝐫𝐫𝐞𝐥𝐚𝐭𝐢𝐨𝐧 𝐀𝐧𝐚𝐥𝐲𝐬𝐢𝐬 ⚜️'
+showCorrTable = input.bool(true, "Show Correlation Table", group=GROUP_CORR)
+tablePosition = input.string("Middle Right", "Table Position", options=["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], group=GROUP_CORR)
+
+// 30 configurable correlation lengths (default 10, 20, 30, ... 300)
+corrLen01 = input.int(10,  "Length 01", minval=1, group=GROUP_CORR)
+corrLen02 = input.int(20,  "Length 02", minval=1, group=GROUP_CORR)
+corrLen03 = input.int(30,  "Length 03", minval=1, group=GROUP_CORR)
+corrLen04 = input.int(40,  "Length 04", minval=1, group=GROUP_CORR)
+corrLen05 = input.int(50,  "Length 05", minval=1, group=GROUP_CORR)
+corrLen06 = input.int(60,  "Length 06", minval=1, group=GROUP_CORR)
+corrLen07 = input.int(70,  "Length 07", minval=1, group=GROUP_CORR)
+corrLen08 = input.int(80,  "Length 08", minval=1, group=GROUP_CORR)
+corrLen09 = input.int(90,  "Length 09", minval=1, group=GROUP_CORR)
+corrLen10 = input.int(100, "Length 10", minval=1, group=GROUP_CORR)
+corrLen11 = input.int(110, "Length 11", minval=1, group=GROUP_CORR)
+corrLen12 = input.int(120, "Length 12", minval=1, group=GROUP_CORR)
+corrLen13 = input.int(130, "Length 13", minval=1, group=GROUP_CORR)
+corrLen14 = input.int(140, "Length 14", minval=1, group=GROUP_CORR)
+corrLen15 = input.int(150, "Length 15", minval=1, group=GROUP_CORR)
+corrLen16 = input.int(160, "Length 16", minval=1, group=GROUP_CORR)
+corrLen17 = input.int(170, "Length 17", minval=1, group=GROUP_CORR)
+corrLen18 = input.int(180, "Length 18", minval=1, group=GROUP_CORR)
+corrLen19 = input.int(190, "Length 19", minval=1, group=GROUP_CORR)
+corrLen20 = input.int(200, "Length 20", minval=1, group=GROUP_CORR)
+corrLen21 = input.int(210, "Length 21", minval=1, group=GROUP_CORR)
+corrLen22 = input.int(220, "Length 22", minval=1, group=GROUP_CORR)
+corrLen23 = input.int(230, "Length 23", minval=1, group=GROUP_CORR)
+corrLen24 = input.int(240, "Length 24", minval=1, group=GROUP_CORR)
+corrLen25 = input.int(250, "Length 25", minval=1, group=GROUP_CORR)
+corrLen26 = input.int(260, "Length 26", minval=1, group=GROUP_CORR)
+corrLen27 = input.int(270, "Length 27", minval=1, group=GROUP_CORR)
+corrLen28 = input.int(280, "Length 28", minval=1, group=GROUP_CORR)
+corrLen29 = input.int(290, "Length 29", minval=1, group=GROUP_CORR)
+corrLen30 = input.int(300, "Length 30", minval=1, group=GROUP_CORR)
+
+// Table styling constants (matching QuantCore)
+BG_COLOR        = color.rgb(0, 0, 0)
+BORDER_COLOR    = color.rgb(30, 30, 30)
+FRAME_COLOR     = color.rgb(35, 35, 35)
+TEXT_COLOR       = color.silver
+TITLE_TEXT_SIZE  = size.large
+SMALL_TEXT_SIZE  = size.normal
+TABLE_SMALL_BORDER = 0.01
+CORR_FRAME_WIDTH   = 4
+CORR_BORDER_WIDTH  = 2
+COLUMN_HEIGHT_SIDE = 2.8
+COLUMN_WIDTH_SIDE  = 3
+TABLE_WIDTH_SIDE   = 10
+
+// Position helper
+getPosition(pos) =>
+    switch pos
+        "Top Left" => position.top_left
+        "Top Center" => position.top_center
+        "Top Right" => position.top_right
+        "Middle Left" => position.middle_left
+        "Middle Center" => position.middle_center
+        "Middle Right" => position.middle_right
+        "Bottom Left" => position.bottom_left
+        "Bottom Center" => position.bottom_center
+        => position.bottom_right
+
+// Correlation color function (green for positive, red for negative, gradient by strength)
+corrColor(val) =>
+    absVal = math.abs(val)
+    if na(val)
+        color.gray
+    else if val > 0
+        color.from_gradient(absVal, 0, 1, color.gray, color.rgb(0, 230, 118))
+    else
+        color.from_gradient(absVal, 0, 1, color.gray, color.rgb(255, 82, 82))
+
+// ---- Calculate correlations for ALL lags at each of the 20 lengths ----
+
+// Main lag correlations
+corrM_01 = ta.correlation(close, secondaryAsset[mainLag], corrLen01)
+corrM_02 = ta.correlation(close, secondaryAsset[mainLag], corrLen02)
+corrM_03 = ta.correlation(close, secondaryAsset[mainLag], corrLen03)
+corrM_04 = ta.correlation(close, secondaryAsset[mainLag], corrLen04)
+corrM_05 = ta.correlation(close, secondaryAsset[mainLag], corrLen05)
+corrM_06 = ta.correlation(close, secondaryAsset[mainLag], corrLen06)
+corrM_07 = ta.correlation(close, secondaryAsset[mainLag], corrLen07)
+corrM_08 = ta.correlation(close, secondaryAsset[mainLag], corrLen08)
+corrM_09 = ta.correlation(close, secondaryAsset[mainLag], corrLen09)
+corrM_10 = ta.correlation(close, secondaryAsset[mainLag], corrLen10)
+corrM_11 = ta.correlation(close, secondaryAsset[mainLag], corrLen11)
+corrM_12 = ta.correlation(close, secondaryAsset[mainLag], corrLen12)
+corrM_13 = ta.correlation(close, secondaryAsset[mainLag], corrLen13)
+corrM_14 = ta.correlation(close, secondaryAsset[mainLag], corrLen14)
+corrM_15 = ta.correlation(close, secondaryAsset[mainLag], corrLen15)
+corrM_16 = ta.correlation(close, secondaryAsset[mainLag], corrLen16)
+corrM_17 = ta.correlation(close, secondaryAsset[mainLag], corrLen17)
+corrM_18 = ta.correlation(close, secondaryAsset[mainLag], corrLen18)
+corrM_19 = ta.correlation(close, secondaryAsset[mainLag], corrLen19)
+corrM_20 = ta.correlation(close, secondaryAsset[mainLag], corrLen20)
+corrM_21 = ta.correlation(close, secondaryAsset[mainLag], corrLen21)
+corrM_22 = ta.correlation(close, secondaryAsset[mainLag], corrLen22)
+corrM_23 = ta.correlation(close, secondaryAsset[mainLag], corrLen23)
+corrM_24 = ta.correlation(close, secondaryAsset[mainLag], corrLen24)
+corrM_25 = ta.correlation(close, secondaryAsset[mainLag], corrLen25)
+corrM_26 = ta.correlation(close, secondaryAsset[mainLag], corrLen26)
+corrM_27 = ta.correlation(close, secondaryAsset[mainLag], corrLen27)
+corrM_28 = ta.correlation(close, secondaryAsset[mainLag], corrLen28)
+corrM_29 = ta.correlation(close, secondaryAsset[mainLag], corrLen29)
+corrM_30 = ta.correlation(close, secondaryAsset[mainLag], corrLen30)
+
+// Upper deviation 1
+cU1_01 = ta.correlation(close, secondaryAsset[upperLag1], corrLen01)
+cU1_02 = ta.correlation(close, secondaryAsset[upperLag1], corrLen02)
+cU1_03 = ta.correlation(close, secondaryAsset[upperLag1], corrLen03)
+cU1_04 = ta.correlation(close, secondaryAsset[upperLag1], corrLen04)
+cU1_05 = ta.correlation(close, secondaryAsset[upperLag1], corrLen05)
+cU1_06 = ta.correlation(close, secondaryAsset[upperLag1], corrLen06)
+cU1_07 = ta.correlation(close, secondaryAsset[upperLag1], corrLen07)
+cU1_08 = ta.correlation(close, secondaryAsset[upperLag1], corrLen08)
+cU1_09 = ta.correlation(close, secondaryAsset[upperLag1], corrLen09)
+cU1_10 = ta.correlation(close, secondaryAsset[upperLag1], corrLen10)
+cU1_11 = ta.correlation(close, secondaryAsset[upperLag1], corrLen11)
+cU1_12 = ta.correlation(close, secondaryAsset[upperLag1], corrLen12)
+cU1_13 = ta.correlation(close, secondaryAsset[upperLag1], corrLen13)
+cU1_14 = ta.correlation(close, secondaryAsset[upperLag1], corrLen14)
+cU1_15 = ta.correlation(close, secondaryAsset[upperLag1], corrLen15)
+cU1_16 = ta.correlation(close, secondaryAsset[upperLag1], corrLen16)
+cU1_17 = ta.correlation(close, secondaryAsset[upperLag1], corrLen17)
+cU1_18 = ta.correlation(close, secondaryAsset[upperLag1], corrLen18)
+cU1_19 = ta.correlation(close, secondaryAsset[upperLag1], corrLen19)
+cU1_20 = ta.correlation(close, secondaryAsset[upperLag1], corrLen20)
+cU1_21 = ta.correlation(close, secondaryAsset[upperLag1], corrLen21)
+cU1_22 = ta.correlation(close, secondaryAsset[upperLag1], corrLen22)
+cU1_23 = ta.correlation(close, secondaryAsset[upperLag1], corrLen23)
+cU1_24 = ta.correlation(close, secondaryAsset[upperLag1], corrLen24)
+cU1_25 = ta.correlation(close, secondaryAsset[upperLag1], corrLen25)
+cU1_26 = ta.correlation(close, secondaryAsset[upperLag1], corrLen26)
+cU1_27 = ta.correlation(close, secondaryAsset[upperLag1], corrLen27)
+cU1_28 = ta.correlation(close, secondaryAsset[upperLag1], corrLen28)
+cU1_29 = ta.correlation(close, secondaryAsset[upperLag1], corrLen29)
+cU1_30 = ta.correlation(close, secondaryAsset[upperLag1], corrLen30)
+
+// Upper deviation 2
+cU2_01 = ta.correlation(close, secondaryAsset[upperLag2], corrLen01)
+cU2_02 = ta.correlation(close, secondaryAsset[upperLag2], corrLen02)
+cU2_03 = ta.correlation(close, secondaryAsset[upperLag2], corrLen03)
+cU2_04 = ta.correlation(close, secondaryAsset[upperLag2], corrLen04)
+cU2_05 = ta.correlation(close, secondaryAsset[upperLag2], corrLen05)
+cU2_06 = ta.correlation(close, secondaryAsset[upperLag2], corrLen06)
+cU2_07 = ta.correlation(close, secondaryAsset[upperLag2], corrLen07)
+cU2_08 = ta.correlation(close, secondaryAsset[upperLag2], corrLen08)
+cU2_09 = ta.correlation(close, secondaryAsset[upperLag2], corrLen09)
+cU2_10 = ta.correlation(close, secondaryAsset[upperLag2], corrLen10)
+cU2_11 = ta.correlation(close, secondaryAsset[upperLag2], corrLen11)
+cU2_12 = ta.correlation(close, secondaryAsset[upperLag2], corrLen12)
+cU2_13 = ta.correlation(close, secondaryAsset[upperLag2], corrLen13)
+cU2_14 = ta.correlation(close, secondaryAsset[upperLag2], corrLen14)
+cU2_15 = ta.correlation(close, secondaryAsset[upperLag2], corrLen15)
+cU2_16 = ta.correlation(close, secondaryAsset[upperLag2], corrLen16)
+cU2_17 = ta.correlation(close, secondaryAsset[upperLag2], corrLen17)
+cU2_18 = ta.correlation(close, secondaryAsset[upperLag2], corrLen18)
+cU2_19 = ta.correlation(close, secondaryAsset[upperLag2], corrLen19)
+cU2_20 = ta.correlation(close, secondaryAsset[upperLag2], corrLen20)
+cU2_21 = ta.correlation(close, secondaryAsset[upperLag2], corrLen21)
+cU2_22 = ta.correlation(close, secondaryAsset[upperLag2], corrLen22)
+cU2_23 = ta.correlation(close, secondaryAsset[upperLag2], corrLen23)
+cU2_24 = ta.correlation(close, secondaryAsset[upperLag2], corrLen24)
+cU2_25 = ta.correlation(close, secondaryAsset[upperLag2], corrLen25)
+cU2_26 = ta.correlation(close, secondaryAsset[upperLag2], corrLen26)
+cU2_27 = ta.correlation(close, secondaryAsset[upperLag2], corrLen27)
+cU2_28 = ta.correlation(close, secondaryAsset[upperLag2], corrLen28)
+cU2_29 = ta.correlation(close, secondaryAsset[upperLag2], corrLen29)
+cU2_30 = ta.correlation(close, secondaryAsset[upperLag2], corrLen30)
+
+// Upper deviation 3
+cU3_01 = ta.correlation(close, secondaryAsset[upperLag3], corrLen01)
+cU3_02 = ta.correlation(close, secondaryAsset[upperLag3], corrLen02)
+cU3_03 = ta.correlation(close, secondaryAsset[upperLag3], corrLen03)
+cU3_04 = ta.correlation(close, secondaryAsset[upperLag3], corrLen04)
+cU3_05 = ta.correlation(close, secondaryAsset[upperLag3], corrLen05)
+cU3_06 = ta.correlation(close, secondaryAsset[upperLag3], corrLen06)
+cU3_07 = ta.correlation(close, secondaryAsset[upperLag3], corrLen07)
+cU3_08 = ta.correlation(close, secondaryAsset[upperLag3], corrLen08)
+cU3_09 = ta.correlation(close, secondaryAsset[upperLag3], corrLen09)
+cU3_10 = ta.correlation(close, secondaryAsset[upperLag3], corrLen10)
+cU3_11 = ta.correlation(close, secondaryAsset[upperLag3], corrLen11)
+cU3_12 = ta.correlation(close, secondaryAsset[upperLag3], corrLen12)
+cU3_13 = ta.correlation(close, secondaryAsset[upperLag3], corrLen13)
+cU3_14 = ta.correlation(close, secondaryAsset[upperLag3], corrLen14)
+cU3_15 = ta.correlation(close, secondaryAsset[upperLag3], corrLen15)
+cU3_16 = ta.correlation(close, secondaryAsset[upperLag3], corrLen16)
+cU3_17 = ta.correlation(close, secondaryAsset[upperLag3], corrLen17)
+cU3_18 = ta.correlation(close, secondaryAsset[upperLag3], corrLen18)
+cU3_19 = ta.correlation(close, secondaryAsset[upperLag3], corrLen19)
+cU3_20 = ta.correlation(close, secondaryAsset[upperLag3], corrLen20)
+cU3_21 = ta.correlation(close, secondaryAsset[upperLag3], corrLen21)
+cU3_22 = ta.correlation(close, secondaryAsset[upperLag3], corrLen22)
+cU3_23 = ta.correlation(close, secondaryAsset[upperLag3], corrLen23)
+cU3_24 = ta.correlation(close, secondaryAsset[upperLag3], corrLen24)
+cU3_25 = ta.correlation(close, secondaryAsset[upperLag3], corrLen25)
+cU3_26 = ta.correlation(close, secondaryAsset[upperLag3], corrLen26)
+cU3_27 = ta.correlation(close, secondaryAsset[upperLag3], corrLen27)
+cU3_28 = ta.correlation(close, secondaryAsset[upperLag3], corrLen28)
+cU3_29 = ta.correlation(close, secondaryAsset[upperLag3], corrLen29)
+cU3_30 = ta.correlation(close, secondaryAsset[upperLag3], corrLen30)
+
+// Upper deviation 4
+cU4_01 = ta.correlation(close, secondaryAsset[upperLag4], corrLen01)
+cU4_02 = ta.correlation(close, secondaryAsset[upperLag4], corrLen02)
+cU4_03 = ta.correlation(close, secondaryAsset[upperLag4], corrLen03)
+cU4_04 = ta.correlation(close, secondaryAsset[upperLag4], corrLen04)
+cU4_05 = ta.correlation(close, secondaryAsset[upperLag4], corrLen05)
+cU4_06 = ta.correlation(close, secondaryAsset[upperLag4], corrLen06)
+cU4_07 = ta.correlation(close, secondaryAsset[upperLag4], corrLen07)
+cU4_08 = ta.correlation(close, secondaryAsset[upperLag4], corrLen08)
+cU4_09 = ta.correlation(close, secondaryAsset[upperLag4], corrLen09)
+cU4_10 = ta.correlation(close, secondaryAsset[upperLag4], corrLen10)
+cU4_11 = ta.correlation(close, secondaryAsset[upperLag4], corrLen11)
+cU4_12 = ta.correlation(close, secondaryAsset[upperLag4], corrLen12)
+cU4_13 = ta.correlation(close, secondaryAsset[upperLag4], corrLen13)
+cU4_14 = ta.correlation(close, secondaryAsset[upperLag4], corrLen14)
+cU4_15 = ta.correlation(close, secondaryAsset[upperLag4], corrLen15)
+cU4_16 = ta.correlation(close, secondaryAsset[upperLag4], corrLen16)
+cU4_17 = ta.correlation(close, secondaryAsset[upperLag4], corrLen17)
+cU4_18 = ta.correlation(close, secondaryAsset[upperLag4], corrLen18)
+cU4_19 = ta.correlation(close, secondaryAsset[upperLag4], corrLen19)
+cU4_20 = ta.correlation(close, secondaryAsset[upperLag4], corrLen20)
+cU4_21 = ta.correlation(close, secondaryAsset[upperLag4], corrLen21)
+cU4_22 = ta.correlation(close, secondaryAsset[upperLag4], corrLen22)
+cU4_23 = ta.correlation(close, secondaryAsset[upperLag4], corrLen23)
+cU4_24 = ta.correlation(close, secondaryAsset[upperLag4], corrLen24)
+cU4_25 = ta.correlation(close, secondaryAsset[upperLag4], corrLen25)
+cU4_26 = ta.correlation(close, secondaryAsset[upperLag4], corrLen26)
+cU4_27 = ta.correlation(close, secondaryAsset[upperLag4], corrLen27)
+cU4_28 = ta.correlation(close, secondaryAsset[upperLag4], corrLen28)
+cU4_29 = ta.correlation(close, secondaryAsset[upperLag4], corrLen29)
+cU4_30 = ta.correlation(close, secondaryAsset[upperLag4], corrLen30)
+
+// Upper deviation 5
+cU5_01 = ta.correlation(close, secondaryAsset[upperLag5], corrLen01)
+cU5_02 = ta.correlation(close, secondaryAsset[upperLag5], corrLen02)
+cU5_03 = ta.correlation(close, secondaryAsset[upperLag5], corrLen03)
+cU5_04 = ta.correlation(close, secondaryAsset[upperLag5], corrLen04)
+cU5_05 = ta.correlation(close, secondaryAsset[upperLag5], corrLen05)
+cU5_06 = ta.correlation(close, secondaryAsset[upperLag5], corrLen06)
+cU5_07 = ta.correlation(close, secondaryAsset[upperLag5], corrLen07)
+cU5_08 = ta.correlation(close, secondaryAsset[upperLag5], corrLen08)
+cU5_09 = ta.correlation(close, secondaryAsset[upperLag5], corrLen09)
+cU5_10 = ta.correlation(close, secondaryAsset[upperLag5], corrLen10)
+cU5_11 = ta.correlation(close, secondaryAsset[upperLag5], corrLen11)
+cU5_12 = ta.correlation(close, secondaryAsset[upperLag5], corrLen12)
+cU5_13 = ta.correlation(close, secondaryAsset[upperLag5], corrLen13)
+cU5_14 = ta.correlation(close, secondaryAsset[upperLag5], corrLen14)
+cU5_15 = ta.correlation(close, secondaryAsset[upperLag5], corrLen15)
+cU5_16 = ta.correlation(close, secondaryAsset[upperLag5], corrLen16)
+cU5_17 = ta.correlation(close, secondaryAsset[upperLag5], corrLen17)
+cU5_18 = ta.correlation(close, secondaryAsset[upperLag5], corrLen18)
+cU5_19 = ta.correlation(close, secondaryAsset[upperLag5], corrLen19)
+cU5_20 = ta.correlation(close, secondaryAsset[upperLag5], corrLen20)
+cU5_21 = ta.correlation(close, secondaryAsset[upperLag5], corrLen21)
+cU5_22 = ta.correlation(close, secondaryAsset[upperLag5], corrLen22)
+cU5_23 = ta.correlation(close, secondaryAsset[upperLag5], corrLen23)
+cU5_24 = ta.correlation(close, secondaryAsset[upperLag5], corrLen24)
+cU5_25 = ta.correlation(close, secondaryAsset[upperLag5], corrLen25)
+cU5_26 = ta.correlation(close, secondaryAsset[upperLag5], corrLen26)
+cU5_27 = ta.correlation(close, secondaryAsset[upperLag5], corrLen27)
+cU5_28 = ta.correlation(close, secondaryAsset[upperLag5], corrLen28)
+cU5_29 = ta.correlation(close, secondaryAsset[upperLag5], corrLen29)
+cU5_30 = ta.correlation(close, secondaryAsset[upperLag5], corrLen30)
+
+// Lower deviation 1
+cL1_01 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen01)
+cL1_02 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen02)
+cL1_03 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen03)
+cL1_04 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen04)
+cL1_05 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen05)
+cL1_06 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen06)
+cL1_07 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen07)
+cL1_08 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen08)
+cL1_09 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen09)
+cL1_10 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen10)
+cL1_11 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen11)
+cL1_12 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen12)
+cL1_13 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen13)
+cL1_14 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen14)
+cL1_15 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen15)
+cL1_16 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen16)
+cL1_17 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen17)
+cL1_18 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen18)
+cL1_19 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen19)
+cL1_20 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen20)
+cL1_21 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen21)
+cL1_22 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen22)
+cL1_23 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen23)
+cL1_24 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen24)
+cL1_25 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen25)
+cL1_26 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen26)
+cL1_27 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen27)
+cL1_28 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen28)
+cL1_29 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen29)
+cL1_30 = ta.correlation(close, secondaryAsset[lowerLag1], corrLen30)
+
+// Lower deviation 2
+cL2_01 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen01)
+cL2_02 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen02)
+cL2_03 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen03)
+cL2_04 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen04)
+cL2_05 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen05)
+cL2_06 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen06)
+cL2_07 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen07)
+cL2_08 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen08)
+cL2_09 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen09)
+cL2_10 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen10)
+cL2_11 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen11)
+cL2_12 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen12)
+cL2_13 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen13)
+cL2_14 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen14)
+cL2_15 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen15)
+cL2_16 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen16)
+cL2_17 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen17)
+cL2_18 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen18)
+cL2_19 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen19)
+cL2_20 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen20)
+cL2_21 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen21)
+cL2_22 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen22)
+cL2_23 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen23)
+cL2_24 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen24)
+cL2_25 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen25)
+cL2_26 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen26)
+cL2_27 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen27)
+cL2_28 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen28)
+cL2_29 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen29)
+cL2_30 = ta.correlation(close, secondaryAsset[lowerLag2], corrLen30)
+
+// Lower deviation 3
+cL3_01 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen01)
+cL3_02 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen02)
+cL3_03 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen03)
+cL3_04 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen04)
+cL3_05 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen05)
+cL3_06 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen06)
+cL3_07 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen07)
+cL3_08 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen08)
+cL3_09 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen09)
+cL3_10 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen10)
+cL3_11 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen11)
+cL3_12 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen12)
+cL3_13 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen13)
+cL3_14 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen14)
+cL3_15 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen15)
+cL3_16 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen16)
+cL3_17 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen17)
+cL3_18 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen18)
+cL3_19 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen19)
+cL3_20 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen20)
+cL3_21 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen21)
+cL3_22 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen22)
+cL3_23 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen23)
+cL3_24 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen24)
+cL3_25 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen25)
+cL3_26 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen26)
+cL3_27 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen27)
+cL3_28 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen28)
+cL3_29 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen29)
+cL3_30 = ta.correlation(close, secondaryAsset[lowerLag3], corrLen30)
+
+// Lower deviation 4
+cL4_01 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen01)
+cL4_02 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen02)
+cL4_03 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen03)
+cL4_04 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen04)
+cL4_05 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen05)
+cL4_06 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen06)
+cL4_07 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen07)
+cL4_08 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen08)
+cL4_09 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen09)
+cL4_10 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen10)
+cL4_11 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen11)
+cL4_12 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen12)
+cL4_13 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen13)
+cL4_14 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen14)
+cL4_15 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen15)
+cL4_16 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen16)
+cL4_17 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen17)
+cL4_18 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen18)
+cL4_19 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen19)
+cL4_20 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen20)
+cL4_21 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen21)
+cL4_22 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen22)
+cL4_23 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen23)
+cL4_24 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen24)
+cL4_25 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen25)
+cL4_26 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen26)
+cL4_27 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen27)
+cL4_28 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen28)
+cL4_29 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen29)
+cL4_30 = ta.correlation(close, secondaryAsset[lowerLag4], corrLen30)
+
+// Lower deviation 5
+cL5_01 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen01)
+cL5_02 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen02)
+cL5_03 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen03)
+cL5_04 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen04)
+cL5_05 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen05)
+cL5_06 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen06)
+cL5_07 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen07)
+cL5_08 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen08)
+cL5_09 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen09)
+cL5_10 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen10)
+cL5_11 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen11)
+cL5_12 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen12)
+cL5_13 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen13)
+cL5_14 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen14)
+cL5_15 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen15)
+cL5_16 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen16)
+cL5_17 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen17)
+cL5_18 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen18)
+cL5_19 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen19)
+cL5_20 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen20)
+cL5_21 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen21)
+cL5_22 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen22)
+cL5_23 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen23)
+cL5_24 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen24)
+cL5_25 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen25)
+cL5_26 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen26)
+cL5_27 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen27)
+cL5_28 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen28)
+cL5_29 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen29)
+cL5_30 = ta.correlation(close, secondaryAsset[lowerLag5], corrLen30)
+
+// ---- Table Structure ----
+// Columns: border | Length | L5 | L4 | L3 | L2 | L1 | Main | U1 | U2 | U3 | U4 | U5 | border
+// Max 14 columns (all 5 deviations), min 4 columns (0 deviations: border + length + main + border)
+// Rows: border(0) | title(1) | header(2) | 30 data rows(3-32) | score(33) | border(34) = 35 rows
+CORR_DATA_COLS = 2 + numDeviations * 2  // length + main + upper devs + lower devs
+CORR_COLS = CORR_DATA_COLS + 2  // + 2 borders
+CORR_ROWS = 35
+lastCol = CORR_COLS - 1
+lastRow = CORR_ROWS - 1
+
+// Column index mapping: border=0, length=1, then lower devs (highest first), main, upper devs (lowest first), border
+// With numDeviations=3: border | Length | L3 | L2 | L1 | Main | U1 | U2 | U3 | border
+colLength = 1
+colMain = 1 + numDeviations + 1  // after length + lower devs
+
+var tableCorr = showCorrTable ? table.new(position=getPosition(tablePosition), columns=CORR_COLS, rows=CORR_ROWS, bgcolor=BG_COLOR, border_width=CORR_BORDER_WIDTH, border_color=BORDER_COLOR, frame_color=FRAME_COLOR, frame_width=CORR_FRAME_WIDTH) : na
+
+// Merge cells at top level (matching QuantCore pattern)
+if showCorrTable
+    // Corners
+    table.merge_cells(tableCorr, 0, 0, 0, 0)
+    table.merge_cells(tableCorr, 0, lastRow, 0, lastRow)
+    table.merge_cells(tableCorr, lastCol, 0, lastCol, 0)
+    table.merge_cells(tableCorr, lastCol, lastRow, lastCol, lastRow)
+    // Vertical borders
+    table.merge_cells(tableCorr, 0, 1, 0, 33)
+    table.merge_cells(tableCorr, lastCol, 1, lastCol, 33)
+    // Horizontal borders
+    table.merge_cells(tableCorr, 1, 0, lastCol - 1, 0)
+    table.merge_cells(tableCorr, 1, lastRow, lastCol - 1, lastRow)
+    // Title merge
+    table.merge_cells(tableCorr, 1, 1, lastCol - 1, 1)
+
+// Average correlation scores
+avgM = math.round(math.avg(corrM_01, corrM_02, corrM_03, corrM_04, corrM_05, corrM_06, corrM_07, corrM_08, corrM_09, corrM_10, corrM_11, corrM_12, corrM_13, corrM_14, corrM_15, corrM_16, corrM_17, corrM_18, corrM_19, corrM_20, corrM_21, corrM_22, corrM_23, corrM_24, corrM_25, corrM_26, corrM_27, corrM_28, corrM_29, corrM_30), 2)
+avgU1 = math.round(math.avg(cU1_01, cU1_02, cU1_03, cU1_04, cU1_05, cU1_06, cU1_07, cU1_08, cU1_09, cU1_10, cU1_11, cU1_12, cU1_13, cU1_14, cU1_15, cU1_16, cU1_17, cU1_18, cU1_19, cU1_20, cU1_21, cU1_22, cU1_23, cU1_24, cU1_25, cU1_26, cU1_27, cU1_28, cU1_29, cU1_30), 2)
+avgU2 = math.round(math.avg(cU2_01, cU2_02, cU2_03, cU2_04, cU2_05, cU2_06, cU2_07, cU2_08, cU2_09, cU2_10, cU2_11, cU2_12, cU2_13, cU2_14, cU2_15, cU2_16, cU2_17, cU2_18, cU2_19, cU2_20, cU2_21, cU2_22, cU2_23, cU2_24, cU2_25, cU2_26, cU2_27, cU2_28, cU2_29, cU2_30), 2)
+avgU3 = math.round(math.avg(cU3_01, cU3_02, cU3_03, cU3_04, cU3_05, cU3_06, cU3_07, cU3_08, cU3_09, cU3_10, cU3_11, cU3_12, cU3_13, cU3_14, cU3_15, cU3_16, cU3_17, cU3_18, cU3_19, cU3_20, cU3_21, cU3_22, cU3_23, cU3_24, cU3_25, cU3_26, cU3_27, cU3_28, cU3_29, cU3_30), 2)
+avgU4 = math.round(math.avg(cU4_01, cU4_02, cU4_03, cU4_04, cU4_05, cU4_06, cU4_07, cU4_08, cU4_09, cU4_10, cU4_11, cU4_12, cU4_13, cU4_14, cU4_15, cU4_16, cU4_17, cU4_18, cU4_19, cU4_20, cU4_21, cU4_22, cU4_23, cU4_24, cU4_25, cU4_26, cU4_27, cU4_28, cU4_29, cU4_30), 2)
+avgU5 = math.round(math.avg(cU5_01, cU5_02, cU5_03, cU5_04, cU5_05, cU5_06, cU5_07, cU5_08, cU5_09, cU5_10, cU5_11, cU5_12, cU5_13, cU5_14, cU5_15, cU5_16, cU5_17, cU5_18, cU5_19, cU5_20, cU5_21, cU5_22, cU5_23, cU5_24, cU5_25, cU5_26, cU5_27, cU5_28, cU5_29, cU5_30), 2)
+avgL1 = math.round(math.avg(cL1_01, cL1_02, cL1_03, cL1_04, cL1_05, cL1_06, cL1_07, cL1_08, cL1_09, cL1_10, cL1_11, cL1_12, cL1_13, cL1_14, cL1_15, cL1_16, cL1_17, cL1_18, cL1_19, cL1_20, cL1_21, cL1_22, cL1_23, cL1_24, cL1_25, cL1_26, cL1_27, cL1_28, cL1_29, cL1_30), 2)
+avgL2 = math.round(math.avg(cL2_01, cL2_02, cL2_03, cL2_04, cL2_05, cL2_06, cL2_07, cL2_08, cL2_09, cL2_10, cL2_11, cL2_12, cL2_13, cL2_14, cL2_15, cL2_16, cL2_17, cL2_18, cL2_19, cL2_20, cL2_21, cL2_22, cL2_23, cL2_24, cL2_25, cL2_26, cL2_27, cL2_28, cL2_29, cL2_30), 2)
+avgL3 = math.round(math.avg(cL3_01, cL3_02, cL3_03, cL3_04, cL3_05, cL3_06, cL3_07, cL3_08, cL3_09, cL3_10, cL3_11, cL3_12, cL3_13, cL3_14, cL3_15, cL3_16, cL3_17, cL3_18, cL3_19, cL3_20, cL3_21, cL3_22, cL3_23, cL3_24, cL3_25, cL3_26, cL3_27, cL3_28, cL3_29, cL3_30), 2)
+avgL4 = math.round(math.avg(cL4_01, cL4_02, cL4_03, cL4_04, cL4_05, cL4_06, cL4_07, cL4_08, cL4_09, cL4_10, cL4_11, cL4_12, cL4_13, cL4_14, cL4_15, cL4_16, cL4_17, cL4_18, cL4_19, cL4_20, cL4_21, cL4_22, cL4_23, cL4_24, cL4_25, cL4_26, cL4_27, cL4_28, cL4_29, cL4_30), 2)
+avgL5 = math.round(math.avg(cL5_01, cL5_02, cL5_03, cL5_04, cL5_05, cL5_06, cL5_07, cL5_08, cL5_09, cL5_10, cL5_11, cL5_12, cL5_13, cL5_14, cL5_15, cL5_16, cL5_17, cL5_18, cL5_19, cL5_20, cL5_21, cL5_22, cL5_23, cL5_24, cL5_25, cL5_26, cL5_27, cL5_28, cL5_29, cL5_30), 2)
+
+// Helper: write a cell with correlation value
+corrCell(tbl, col, row, val) =>
+    table.cell(tbl, col, row, text=str.tostring(math.round(val, 2)), text_color=corrColor(val), bgcolor=BG_COLOR, width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+
+// Helper: write score cell
+scoreCell(tbl, col, row, val) =>
+    table.cell(tbl, col, row, text=str.tostring(val), text_color=corrColor(val), height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+
+if barstate.islast and showCorrTable
+    // Title
+    table.cell(tableCorr, 1, 1, text='⚜️ 𝐐𝐮𝐚𝐧𝐭𝐕𝐢𝐞𝐰 | 𝐐𝐮𝐚𝐧𝐭𝐋𝐚𝐠 ⚜️', text_color=TEXT_COLOR, bgcolor=BG_COLOR, width=TABLE_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=TITLE_TEXT_SIZE)
+
+    // Corners
+    table.cell(tableCorr, 0, 0, text='', bgcolor=BORDER_COLOR, width=TABLE_SMALL_BORDER, height=TABLE_SMALL_BORDER, text_size=TITLE_TEXT_SIZE)
+    table.cell(tableCorr, lastCol, 0, text='', bgcolor=BORDER_COLOR, width=TABLE_SMALL_BORDER, height=TABLE_SMALL_BORDER, text_size=TITLE_TEXT_SIZE)
+    table.cell(tableCorr, 0, lastRow, text='', bgcolor=BORDER_COLOR, width=TABLE_SMALL_BORDER, height=TABLE_SMALL_BORDER, text_size=TITLE_TEXT_SIZE)
+    table.cell(tableCorr, lastCol, lastRow, text='', bgcolor=BORDER_COLOR, width=TABLE_SMALL_BORDER, height=TABLE_SMALL_BORDER, text_size=TITLE_TEXT_SIZE)
+    // Vertical borders
+    table.cell(tableCorr, 0, 1, text='', bgcolor=BORDER_COLOR, width=TABLE_SMALL_BORDER, text_size=TITLE_TEXT_SIZE)
+    table.cell(tableCorr, lastCol, 1, text='', bgcolor=BORDER_COLOR, width=TABLE_SMALL_BORDER, text_size=TITLE_TEXT_SIZE)
+    // Horizontal borders
+    table.cell(tableCorr, 1, 0, text='', bgcolor=BORDER_COLOR, height=TABLE_SMALL_BORDER, text_size=TITLE_TEXT_SIZE)
+    table.cell(tableCorr, 1, lastRow, text='', bgcolor=BORDER_COLOR, height=TABLE_SMALL_BORDER, text_size=TITLE_TEXT_SIZE)
+
+    // Header row (row 2)
+    table.cell(tableCorr, colLength, 2, text='𝐋𝐞𝐧𝐠𝐭𝐡', text_color=TEXT_COLOR, width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    table.cell(tableCorr, colMain, 2, text=str.format('{0}', mainLag), text_color=color.white, width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+
+    // Lower deviation headers (left of main, highest deviation furthest left)
+    if numDeviations >= 1
+        table.cell(tableCorr, colMain - 1, 2, text=str.tostring(lowerLag1), text_color=color.new(histColor, headerOp1), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    if numDeviations >= 2
+        table.cell(tableCorr, colMain - 2, 2, text=str.tostring(lowerLag2), text_color=color.new(histColor, headerOp2), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    if numDeviations >= 3
+        table.cell(tableCorr, colMain - 3, 2, text=str.tostring(lowerLag3), text_color=color.new(histColor, headerOp3), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    if numDeviations >= 4
+        table.cell(tableCorr, colMain - 4, 2, text=str.tostring(lowerLag4), text_color=color.new(histColor, headerOp4), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    if numDeviations >= 5
+        table.cell(tableCorr, colMain - 5, 2, text=str.tostring(lowerLag5), text_color=color.new(histColor, headerOp5), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+
+    // Upper deviation headers (right of main)
+    if numDeviations >= 1
+        table.cell(tableCorr, colMain + 1, 2, text=str.tostring(upperLag1), text_color=color.new(projColor, headerOp1), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    if numDeviations >= 2
+        table.cell(tableCorr, colMain + 2, 2, text=str.tostring(upperLag2), text_color=color.new(projColor, headerOp2), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    if numDeviations >= 3
+        table.cell(tableCorr, colMain + 3, 2, text=str.tostring(upperLag3), text_color=color.new(projColor, headerOp3), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    if numDeviations >= 4
+        table.cell(tableCorr, colMain + 4, 2, text=str.tostring(upperLag4), text_color=color.new(projColor, headerOp4), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    if numDeviations >= 5
+        table.cell(tableCorr, colMain + 5, 2, text=str.tostring(upperLag5), text_color=color.new(projColor, headerOp5), width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+
+    // ---- Data rows (rows 3-32): 30 correlation lengths ----
+    // Each row: Length | L5..L1 | Main | U1..U5
+    for i = 0 to 29
+        int r = 3 + i
+        float cLen = switch i
+            0  => corrLen01
+            1  => corrLen02
+            2  => corrLen03
+            3  => corrLen04
+            4  => corrLen05
+            5  => corrLen06
+            6  => corrLen07
+            7  => corrLen08
+            8  => corrLen09
+            9  => corrLen10
+            10 => corrLen11
+            11 => corrLen12
+            12 => corrLen13
+            13 => corrLen14
+            14 => corrLen15
+            15 => corrLen16
+            16 => corrLen17
+            17 => corrLen18
+            18 => corrLen19
+            19 => corrLen20
+            20 => corrLen21
+            21 => corrLen22
+            22 => corrLen23
+            23 => corrLen24
+            24 => corrLen25
+            25 => corrLen26
+            26 => corrLen27
+            27 => corrLen28
+            28 => corrLen29
+            => corrLen30
+
+        float vM = switch i
+            0  => corrM_01
+            1  => corrM_02
+            2  => corrM_03
+            3  => corrM_04
+            4  => corrM_05
+            5  => corrM_06
+            6  => corrM_07
+            7  => corrM_08
+            8  => corrM_09
+            9  => corrM_10
+            10 => corrM_11
+            11 => corrM_12
+            12 => corrM_13
+            13 => corrM_14
+            14 => corrM_15
+            15 => corrM_16
+            16 => corrM_17
+            17 => corrM_18
+            18 => corrM_19
+            19 => corrM_20
+            20 => corrM_21
+            21 => corrM_22
+            22 => corrM_23
+            23 => corrM_24
+            24 => corrM_25
+            25 => corrM_26
+            26 => corrM_27
+            27 => corrM_28
+            28 => corrM_29
+            => corrM_30
+
+        // Length label
+        table.cell(tableCorr, colLength, r, text=str.tostring(cLen, '#'), text_color=TEXT_COLOR, width=COLUMN_WIDTH_SIDE, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+        // Main lag
+        corrCell(tableCorr, colMain, r, vM)
+
+        // Upper deviations
+        if numDeviations >= 1
+            float vU1 = switch i
+                0  => cU1_01
+                1  => cU1_02
+                2  => cU1_03
+                3  => cU1_04
+                4  => cU1_05
+                5  => cU1_06
+                6  => cU1_07
+                7  => cU1_08
+                8  => cU1_09
+                9  => cU1_10
+                10 => cU1_11
+                11 => cU1_12
+                12 => cU1_13
+                13 => cU1_14
+                14 => cU1_15
+                15 => cU1_16
+                16 => cU1_17
+                17 => cU1_18
+                18 => cU1_19
+                19 => cU1_20
+                20 => cU1_21
+                21 => cU1_22
+                22 => cU1_23
+                23 => cU1_24
+                24 => cU1_25
+                25 => cU1_26
+                26 => cU1_27
+                27 => cU1_28
+                28 => cU1_29
+                => cU1_30
+            corrCell(tableCorr, colMain + 1, r, vU1)
+        if numDeviations >= 2
+            float vU2 = switch i
+                0  => cU2_01
+                1  => cU2_02
+                2  => cU2_03
+                3  => cU2_04
+                4  => cU2_05
+                5  => cU2_06
+                6  => cU2_07
+                7  => cU2_08
+                8  => cU2_09
+                9  => cU2_10
+                10 => cU2_11
+                11 => cU2_12
+                12 => cU2_13
+                13 => cU2_14
+                14 => cU2_15
+                15 => cU2_16
+                16 => cU2_17
+                17 => cU2_18
+                18 => cU2_19
+                19 => cU2_20
+                20 => cU2_21
+                21 => cU2_22
+                22 => cU2_23
+                23 => cU2_24
+                24 => cU2_25
+                25 => cU2_26
+                26 => cU2_27
+                27 => cU2_28
+                28 => cU2_29
+                => cU2_30
+            corrCell(tableCorr, colMain + 2, r, vU2)
+        if numDeviations >= 3
+            float vU3 = switch i
+                0  => cU3_01
+                1  => cU3_02
+                2  => cU3_03
+                3  => cU3_04
+                4  => cU3_05
+                5  => cU3_06
+                6  => cU3_07
+                7  => cU3_08
+                8  => cU3_09
+                9  => cU3_10
+                10 => cU3_11
+                11 => cU3_12
+                12 => cU3_13
+                13 => cU3_14
+                14 => cU3_15
+                15 => cU3_16
+                16 => cU3_17
+                17 => cU3_18
+                18 => cU3_19
+                19 => cU3_20
+                20 => cU3_21
+                21 => cU3_22
+                22 => cU3_23
+                23 => cU3_24
+                24 => cU3_25
+                25 => cU3_26
+                26 => cU3_27
+                27 => cU3_28
+                28 => cU3_29
+                => cU3_30
+            corrCell(tableCorr, colMain + 3, r, vU3)
+        if numDeviations >= 4
+            float vU4 = switch i
+                0  => cU4_01
+                1  => cU4_02
+                2  => cU4_03
+                3  => cU4_04
+                4  => cU4_05
+                5  => cU4_06
+                6  => cU4_07
+                7  => cU4_08
+                8  => cU4_09
+                9  => cU4_10
+                10 => cU4_11
+                11 => cU4_12
+                12 => cU4_13
+                13 => cU4_14
+                14 => cU4_15
+                15 => cU4_16
+                16 => cU4_17
+                17 => cU4_18
+                18 => cU4_19
+                19 => cU4_20
+                20 => cU4_21
+                21 => cU4_22
+                22 => cU4_23
+                23 => cU4_24
+                24 => cU4_25
+                25 => cU4_26
+                26 => cU4_27
+                27 => cU4_28
+                28 => cU4_29
+                => cU4_30
+            corrCell(tableCorr, colMain + 4, r, vU4)
+        if numDeviations >= 5
+            float vU5 = switch i
+                0  => cU5_01
+                1  => cU5_02
+                2  => cU5_03
+                3  => cU5_04
+                4  => cU5_05
+                5  => cU5_06
+                6  => cU5_07
+                7  => cU5_08
+                8  => cU5_09
+                9  => cU5_10
+                10 => cU5_11
+                11 => cU5_12
+                12 => cU5_13
+                13 => cU5_14
+                14 => cU5_15
+                15 => cU5_16
+                16 => cU5_17
+                17 => cU5_18
+                18 => cU5_19
+                19 => cU5_20
+                20 => cU5_21
+                21 => cU5_22
+                22 => cU5_23
+                23 => cU5_24
+                24 => cU5_25
+                25 => cU5_26
+                26 => cU5_27
+                27 => cU5_28
+                28 => cU5_29
+                => cU5_30
+            corrCell(tableCorr, colMain + 5, r, vU5)
+
+        // Lower deviations
+        if numDeviations >= 1
+            float vL1 = switch i
+                0  => cL1_01
+                1  => cL1_02
+                2  => cL1_03
+                3  => cL1_04
+                4  => cL1_05
+                5  => cL1_06
+                6  => cL1_07
+                7  => cL1_08
+                8  => cL1_09
+                9  => cL1_10
+                10 => cL1_11
+                11 => cL1_12
+                12 => cL1_13
+                13 => cL1_14
+                14 => cL1_15
+                15 => cL1_16
+                16 => cL1_17
+                17 => cL1_18
+                18 => cL1_19
+                19 => cL1_20
+                20 => cL1_21
+                21 => cL1_22
+                22 => cL1_23
+                23 => cL1_24
+                24 => cL1_25
+                25 => cL1_26
+                26 => cL1_27
+                27 => cL1_28
+                28 => cL1_29
+                => cL1_30
+            corrCell(tableCorr, colMain - 1, r, vL1)
+        if numDeviations >= 2
+            float vL2 = switch i
+                0  => cL2_01
+                1  => cL2_02
+                2  => cL2_03
+                3  => cL2_04
+                4  => cL2_05
+                5  => cL2_06
+                6  => cL2_07
+                7  => cL2_08
+                8  => cL2_09
+                9  => cL2_10
+                10 => cL2_11
+                11 => cL2_12
+                12 => cL2_13
+                13 => cL2_14
+                14 => cL2_15
+                15 => cL2_16
+                16 => cL2_17
+                17 => cL2_18
+                18 => cL2_19
+                19 => cL2_20
+                20 => cL2_21
+                21 => cL2_22
+                22 => cL2_23
+                23 => cL2_24
+                24 => cL2_25
+                25 => cL2_26
+                26 => cL2_27
+                27 => cL2_28
+                28 => cL2_29
+                => cL2_30
+            corrCell(tableCorr, colMain - 2, r, vL2)
+        if numDeviations >= 3
+            float vL3 = switch i
+                0  => cL3_01
+                1  => cL3_02
+                2  => cL3_03
+                3  => cL3_04
+                4  => cL3_05
+                5  => cL3_06
+                6  => cL3_07
+                7  => cL3_08
+                8  => cL3_09
+                9  => cL3_10
+                10 => cL3_11
+                11 => cL3_12
+                12 => cL3_13
+                13 => cL3_14
+                14 => cL3_15
+                15 => cL3_16
+                16 => cL3_17
+                17 => cL3_18
+                18 => cL3_19
+                19 => cL3_20
+                20 => cL3_21
+                21 => cL3_22
+                22 => cL3_23
+                23 => cL3_24
+                24 => cL3_25
+                25 => cL3_26
+                26 => cL3_27
+                27 => cL3_28
+                28 => cL3_29
+                => cL3_30
+            corrCell(tableCorr, colMain - 3, r, vL3)
+        if numDeviations >= 4
+            float vL4 = switch i
+                0  => cL4_01
+                1  => cL4_02
+                2  => cL4_03
+                3  => cL4_04
+                4  => cL4_05
+                5  => cL4_06
+                6  => cL4_07
+                7  => cL4_08
+                8  => cL4_09
+                9  => cL4_10
+                10 => cL4_11
+                11 => cL4_12
+                12 => cL4_13
+                13 => cL4_14
+                14 => cL4_15
+                15 => cL4_16
+                16 => cL4_17
+                17 => cL4_18
+                18 => cL4_19
+                19 => cL4_20
+                20 => cL4_21
+                21 => cL4_22
+                22 => cL4_23
+                23 => cL4_24
+                24 => cL4_25
+                25 => cL4_26
+                26 => cL4_27
+                27 => cL4_28
+                28 => cL4_29
+                => cL4_30
+            corrCell(tableCorr, colMain - 4, r, vL4)
+        if numDeviations >= 5
+            float vL5 = switch i
+                0  => cL5_01
+                1  => cL5_02
+                2  => cL5_03
+                3  => cL5_04
+                4  => cL5_05
+                5  => cL5_06
+                6  => cL5_07
+                7  => cL5_08
+                8  => cL5_09
+                9  => cL5_10
+                10 => cL5_11
+                11 => cL5_12
+                12 => cL5_13
+                13 => cL5_14
+                14 => cL5_15
+                15 => cL5_16
+                16 => cL5_17
+                17 => cL5_18
+                18 => cL5_19
+                19 => cL5_20
+                20 => cL5_21
+                21 => cL5_22
+                22 => cL5_23
+                23 => cL5_24
+                24 => cL5_25
+                25 => cL5_26
+                26 => cL5_27
+                27 => cL5_28
+                28 => cL5_29
+                => cL5_30
+            corrCell(tableCorr, colMain - 5, r, vL5)
+
+    // Score row (row 33)
+    table.cell(tableCorr, colLength, 33, text='𝐒𝐜𝐨𝐫𝐞', text_color=TEXT_COLOR, height=COLUMN_HEIGHT_SIDE, text_size=SMALL_TEXT_SIZE)
+    scoreCell(tableCorr, colMain, 33, avgM)
+    if numDeviations >= 1
+        scoreCell(tableCorr, colMain + 1, 33, avgU1)
+        scoreCell(tableCorr, colMain - 1, 33, avgL1)
+    if numDeviations >= 2
+        scoreCell(tableCorr, colMain + 2, 33, avgU2)
+        scoreCell(tableCorr, colMain - 2, 33, avgL2)
+    if numDeviations >= 3
+        scoreCell(tableCorr, colMain + 3, 33, avgU3)
+        scoreCell(tableCorr, colMain - 3, 33, avgL3)
+    if numDeviations >= 4
+        scoreCell(tableCorr, colMain + 4, 33, avgU4)
+        scoreCell(tableCorr, colMain - 4, 33, avgL4)
+    if numDeviations >= 5
+        scoreCell(tableCorr, colMain + 5, 33, avgU5)
+        scoreCell(tableCorr, colMain - 5, 33, avgL5)

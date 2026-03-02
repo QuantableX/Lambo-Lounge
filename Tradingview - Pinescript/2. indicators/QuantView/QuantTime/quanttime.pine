@@ -1,0 +1,436 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © TheTradingSpiderMan
+
+//@version=6
+import TheTradingSpiderMan/ColorsLibrary/2 as CLR
+
+indicator('⚜️ 𝐐𝐮𝐚𝐧𝐭𝐓𝐢𝐦𝐞 ⚜️', overlay=true, max_lines_count=500)
+
+// Color Theme
+colorTheme = input.string("DEFAULT", "Color Theme", options=["DEFAULT", "MONO", "VAPOR", "NEON", "OCEAN", "SUNSET", "FOREST", "CANDY", "FIRE", "ICE"], group = "Color Theme")
+
+// Input settings for each timeframe
+// 1D Settings
+show1D = input.bool(true, "Show 1D Levels", group="1 Day")
+color1DH = CLR.bullColor(colorTheme, 0)
+color1DL = CLR.bearColor(colorTheme, 0)
+style1D = input.string("Solid", "1D Line Style", options=["Solid", "Dashed", "Dotted"], group="1 Day")
+width1D = input.int(2, "1D Line Width", minval=1, maxval=4, group="1 Day")
+
+// 1W Settings
+show1W = input.bool(true, "Show 1W Levels", group="1 Week")
+color1WH = CLR.bullColor(colorTheme, 25)
+color1WL = CLR.bearColor(colorTheme, 25)
+style1W = input.string("Solid", "1W Line Style", options=["Solid", "Dashed", "Dotted"], group="1 Week")
+width1W = input.int(2, "1W Line Width", minval=1, maxval=4, group="1 Week")
+
+// 1M Settings
+show1M = input.bool(true, "Show 1M Levels", group="1 Month")
+color1MH = CLR.bullColor(colorTheme, 50)
+color1ML = CLR.bearColor(colorTheme, 50)
+style1M = input.string("Solid", "1M Line Style", options=["Solid", "Dashed", "Dotted"], group="1 Month")
+width1M = input.int(2, "1M Line Width", minval=1, maxval=4, group="1 Month")
+
+// 3M Settings
+show3M = input.bool(true, "Show 3M Levels", group="3 Months")
+color3MH = CLR.bullColor(colorTheme, 60)
+color3ML = CLR.bearColor(colorTheme, 60)
+style3M = input.string("Solid", "3M Line Style", options=["Solid", "Dashed", "Dotted"], group="3 Months")
+width3M = input.int(2, "3M Line Width", minval=1, maxval=4, group="3 Months")
+
+// 6M Settings
+show6M = input.bool(true, "Show 6M Levels", group="6 Months")
+color6MH = CLR.bullColor(colorTheme, 65)
+color6ML = CLR.bearColor(colorTheme, 65)
+style6M = input.string("Solid", "6M Line Style", options=["Solid", "Dashed", "Dotted"], group="6 Months")
+width6M = input.int(2, "6M Line Width", minval=1, maxval=4, group="6 Months")
+
+// 1Y Settings
+show1Y = input.bool(true, "Show 1Y Levels", group="1 Year")
+color1YH = CLR.bullColor(colorTheme, 75)
+color1YL = CLR.bearColor(colorTheme, 75)
+style1Y = input.string("Solid", "1Y Line Style", options=["Solid", "Dashed", "Dotted"], group="1 Year")
+width1Y = input.int(3, "1Y Line Width", minval=1, maxval=4, group="1 Year")
+
+// General Settings
+showLabels = input.bool(true, "Show Labels", group="General")
+labelSize = input.string("Normal", "Label Size", options=["Tiny", "Small", "Normal", "Large"], group="General")
+useCurrentCandle = input.bool(false, "Use Current Candle Data", tooltip="If enabled, uses current timeframe's high and low. If disabled, uses previous completed timeframe's high and low.", group="General")
+
+// Function to convert string style to line style
+getLineStyle(style) =>
+    switch style
+        "Solid" => line.style_solid
+        "Dashed" => line.style_dashed
+        "Dotted" => line.style_dotted
+        => line.style_solid
+
+// Function to convert string size to label size
+getLabelSize(size) =>
+    switch size
+        "Tiny" => size.tiny
+        "Small" => size.small
+        "Normal" => size.normal
+        "Large" => size.large
+        => size.small
+
+// Get highs and lows from different timeframes
+// For previous candle data, we get the previous completed timeframe's data
+// For current candle data, we get the current timeframe's ongoing data
+[d1High, d1Low] = if useCurrentCandle
+    request.security(syminfo.tickerid, "1D", [high, low], lookahead=barmerge.lookahead_off)
+else
+    request.security(syminfo.tickerid, "1D", [high[1], low[1]], lookahead=barmerge.lookahead_off)
+
+[w1High, w1Low] = if useCurrentCandle
+    request.security(syminfo.tickerid, "1W", [high, low], lookahead=barmerge.lookahead_off)
+else
+    request.security(syminfo.tickerid, "1W", [high[1], low[1]], lookahead=barmerge.lookahead_off)
+
+[m1High, m1Low] = if useCurrentCandle
+    request.security(syminfo.tickerid, "1M", [high, low], lookahead=barmerge.lookahead_off)
+else
+    request.security(syminfo.tickerid, "1M", [high[1], low[1]], lookahead=barmerge.lookahead_off)
+
+[m3High, m3Low] = if useCurrentCandle
+    request.security(syminfo.tickerid, "3M", [high, low], lookahead=barmerge.lookahead_off)
+else
+    request.security(syminfo.tickerid, "3M", [high[1], low[1]], lookahead=barmerge.lookahead_off)
+
+[m6High, m6Low] = if useCurrentCandle
+    request.security(syminfo.tickerid, "6M", [high, low], lookahead=barmerge.lookahead_off)
+else
+    request.security(syminfo.tickerid, "6M", [high[1], low[1]], lookahead=barmerge.lookahead_off)
+
+[y1High, y1Low] = if useCurrentCandle
+    request.security(syminfo.tickerid, "12M", [high, low], lookahead=barmerge.lookahead_off)
+else
+    request.security(syminfo.tickerid, "12M", [high[1], low[1]], lookahead=barmerge.lookahead_off)
+
+// Variables to track previous values
+var float prev1DH = na
+var float prev1DL = na
+var float prev1WH = na
+var float prev1WL = na
+var float prev1MH = na
+var float prev1ML = na
+var float prev3MH = na
+var float prev3ML = na
+var float prev6MH = na
+var float prev6ML = na
+var float prev1YH = na
+var float prev1YL = na
+
+// Variables to store line objects
+var line line1DH = na
+var line line1DL = na
+var line line1WH = na
+var line line1WL = na
+var line line1MH = na
+var line line1ML = na
+var line line3MH = na
+var line line3ML = na
+var line line6MH = na
+var line line6ML = na
+var line line1YH = na
+var line line1YL = na
+
+// Variables to store label objects
+var label label1DH = na
+var label label1DL = na
+var label label1WH = na
+var label label1WL = na
+var label label1MH = na
+var label label1ML = na
+var label label3MH = na
+var label label3ML = na
+var label label6MH = na
+var label label6ML = na
+var label label1YH = na
+var label label1YL = na
+
+// Variables to store the bar index when levels were set
+var int bar1DH = na
+var int bar1DL = na
+var int bar1WH = na
+var int bar1WL = na
+var int bar1MH = na
+var int bar1ML = na
+var int bar3MH = na
+var int bar3ML = na
+var int bar6MH = na
+var int bar6ML = na
+var int bar1YH = na
+var int bar1YL = na
+
+// Update 1D levels
+if show1D
+    // Check if 1D high changed
+    if d1High != prev1DH and not na(d1High)
+        if not na(line1DH)
+            // Update the existing line's end point to current bar before deleting
+            line.set_x2(line1DH, bar_index)
+            line.delete(line1DH)
+        if not na(label1DH) and showLabels
+            label.delete(label1DH)
+
+        // Start line from the bar where this level was actually set
+        startBar = not na(bar1DH) ? bar1DH : bar_index
+        line1DH := line.new(x1=startBar, y1=d1High, x2=bar_index + 100, y2=d1High,
+                           color=color1DH, style=getLineStyle(style1D), width=width1D, extend=extend.right)
+
+        bar1DH := bar_index
+
+        if showLabels
+            label1DH := label.new(x=startBar, y=d1High, text="1D H",
+                                 color=color.new(color1DH, 80), textcolor=color1DH,
+                                 style=label.style_label_down, size=getLabelSize(labelSize))
+
+    // Check if 1D low changed
+    if d1Low != prev1DL and not na(d1Low)
+        if not na(line1DL)
+            // Update the existing line's end point to current bar before deleting
+            line.set_x2(line1DL, bar_index)
+            line.delete(line1DL)
+        if not na(label1DL) and showLabels
+            label.delete(label1DL)
+
+        // Start line from the bar where this level was actually set
+        startBar = not na(bar1DL) ? bar1DL : bar_index
+        line1DL := line.new(x1=startBar, y1=d1Low, x2=bar_index + 100, y2=d1Low,
+                           color=color1DL, style=getLineStyle(style1D), width=width1D, extend=extend.right)
+
+        bar1DL := bar_index
+
+        if showLabels
+            label1DL := label.new(x=startBar, y=d1Low, text="1D L",
+                                 color=color.new(color1DL, 80), textcolor=color1DL,
+                                 style=label.style_label_up, size=getLabelSize(labelSize))
+
+// Update 1W levels
+if show1W
+    // Check if 1W high changed
+    if w1High != prev1WH and not na(w1High)
+        if not na(line1WH)
+            line.set_x2(line1WH, bar_index)
+            line.delete(line1WH)
+        if not na(label1WH) and showLabels
+            label.delete(label1WH)
+
+        startBar = not na(bar1WH) ? bar1WH : bar_index
+        line1WH := line.new(x1=startBar, y1=w1High, x2=bar_index + 100, y2=w1High,
+                           color=color1WH, style=getLineStyle(style1W), width=width1W, extend=extend.right)
+
+        bar1WH := bar_index
+
+        if showLabels
+            label1WH := label.new(x=startBar, y=w1High, text="1W H",
+                                 color=color.new(color1WH, 80), textcolor=color1WH,
+                                 style=label.style_label_down, size=getLabelSize(labelSize))
+
+    // Check if 1W low changed
+    if w1Low != prev1WL and not na(w1Low)
+        if not na(line1WL)
+            line.set_x2(line1WL, bar_index)
+            line.delete(line1WL)
+        if not na(label1WL) and showLabels
+            label.delete(label1WL)
+
+        startBar = not na(bar1WL) ? bar1WL : bar_index
+        line1WL := line.new(x1=startBar, y1=w1Low, x2=bar_index + 100, y2=w1Low,
+                           color=color1WL, style=getLineStyle(style1W), width=width1W, extend=extend.right)
+
+        bar1WL := bar_index
+
+        if showLabels
+            label1WL := label.new(x=startBar, y=w1Low, text="1W L",
+                                 color=color.new(color1WL, 80), textcolor=color1WL,
+                                 style=label.style_label_up, size=getLabelSize(labelSize))
+
+// Update 1M levels
+if show1M
+    // Check if 1M high changed
+    if m1High != prev1MH and not na(m1High)
+        if not na(line1MH)
+            line.set_x2(line1MH, bar_index)
+            line.delete(line1MH)
+        if not na(label1MH) and showLabels
+            label.delete(label1MH)
+
+        startBar = not na(bar1MH) ? bar1MH : bar_index
+        line1MH := line.new(x1=startBar, y1=m1High, x2=bar_index + 100, y2=m1High,
+                           color=color1MH, style=getLineStyle(style1M), width=width1M, extend=extend.right)
+
+        bar1MH := bar_index
+
+        if showLabels
+            label1MH := label.new(x=startBar, y=m1High, text="1M H",
+                                 color=color.new(color1MH, 80), textcolor=color1MH,
+                                 style=label.style_label_down, size=getLabelSize(labelSize))
+
+    // Check if 1M low changed
+    if m1Low != prev1ML and not na(m1Low)
+        if not na(line1ML)
+            line.set_x2(line1ML, bar_index)
+            line.delete(line1ML)
+        if not na(label1ML) and showLabels
+            label.delete(label1ML)
+
+        startBar = not na(bar1ML) ? bar1ML : bar_index
+        line1ML := line.new(x1=startBar, y1=m1Low, x2=bar_index + 100, y2=m1Low,
+                           color=color1ML, style=getLineStyle(style1M), width=width1M, extend=extend.right)
+
+        bar1ML := bar_index
+
+        if showLabels
+            label1ML := label.new(x=startBar, y=m1Low, text="1M L",
+                                 color=color.new(color1ML, 80), textcolor=color1ML,
+                                 style=label.style_label_up, size=getLabelSize(labelSize))
+
+// Update 3M levels
+if show3M
+    // Check if 3M high changed
+    if m3High != prev3MH and not na(m3High)
+        if not na(line3MH)
+            line.set_x2(line3MH, bar_index)
+            line.delete(line3MH)
+        if not na(label3MH) and showLabels
+            label.delete(label3MH)
+
+        startBar = not na(bar3MH) ? bar3MH : bar_index
+        line3MH := line.new(x1=startBar, y1=m3High, x2=bar_index + 100, y2=m3High,
+                           color=color3MH, style=getLineStyle(style3M), width=width3M, extend=extend.right)
+
+        bar3MH := bar_index
+
+        if showLabels
+            label3MH := label.new(x=startBar, y=m3High, text="3M H",
+                                 color=color.new(color3MH, 80), textcolor=color3MH,
+                                 style=label.style_label_down, size=getLabelSize(labelSize))
+
+    // Check if 3M low changed
+    if m3Low != prev3ML and not na(m3Low)
+        if not na(line3ML)
+            line.set_x2(line3ML, bar_index)
+            line.delete(line3ML)
+        if not na(label3ML) and showLabels
+            label.delete(label3ML)
+
+        startBar = not na(bar3ML) ? bar3ML : bar_index
+        line3ML := line.new(x1=startBar, y1=m3Low, x2=bar_index + 100, y2=m3Low,
+                           color=color3ML, style=getLineStyle(style3M), width=width3M, extend=extend.right)
+
+        bar3ML := bar_index
+
+        if showLabels
+            label3ML := label.new(x=startBar, y=m3Low, text="3M L",
+                                 color=color.new(color3ML, 80), textcolor=color3ML,
+                                 style=label.style_label_up, size=getLabelSize(labelSize))
+
+// Update 6M levels
+if show6M
+    // Check if 6M high changed
+    if m6High != prev6MH and not na(m6High)
+        if not na(line6MH)
+            line.set_x2(line6MH, bar_index)
+            line.delete(line6MH)
+        if not na(label6MH) and showLabels
+            label.delete(label6MH)
+
+        startBar = not na(bar6MH) ? bar6MH : bar_index
+        line6MH := line.new(x1=startBar, y1=m6High, x2=bar_index + 100, y2=m6High,
+                           color=color6MH, style=getLineStyle(style6M), width=width6M, extend=extend.right)
+
+        bar6MH := bar_index
+
+        if showLabels
+            label6MH := label.new(x=startBar, y=m6High, text="6M H",
+                                 color=color.new(color6MH, 80), textcolor=color6MH,
+                                 style=label.style_label_down, size=getLabelSize(labelSize))
+
+    // Check if 6M low changed
+    if m6Low != prev6ML and not na(m6Low)
+        if not na(line6ML)
+            line.set_x2(line6ML, bar_index)
+            line.delete(line6ML)
+        if not na(label6ML) and showLabels
+            label.delete(label6ML)
+
+        startBar = not na(bar6ML) ? bar6ML : bar_index
+        line6ML := line.new(x1=startBar, y1=m6Low, x2=bar_index + 100, y2=m6Low,
+                           color=color6ML, style=getLineStyle(style6M), width=width6M, extend=extend.right)
+
+        bar6ML := bar_index
+
+        if showLabels
+            label6ML := label.new(x=startBar, y=m6Low, text="6M L",
+                                 color=color.new(color6ML, 80), textcolor=color6ML,
+                                 style=label.style_label_up, size=getLabelSize(labelSize))
+
+// Update 1Y levels
+if show1Y
+    // Check if 1Y high changed
+    if y1High != prev1YH and not na(y1High)
+        if not na(line1YH)
+            line.set_x2(line1YH, bar_index)
+            line.delete(line1YH)
+        if not na(label1YH) and showLabels
+            label.delete(label1YH)
+
+        startBar = not na(bar1YH) ? bar1YH : bar_index
+        line1YH := line.new(x1=startBar, y1=y1High, x2=bar_index + 100, y2=y1High,
+                           color=color1YH, style=getLineStyle(style1Y), width=width1Y, extend=extend.right)
+
+        bar1YH := bar_index
+
+        if showLabels
+            label1YH := label.new(x=startBar, y=y1High, text="1Y H",
+                                 color=color.new(color1YH, 80), textcolor=color1YH,
+                                 style=label.style_label_down, size=getLabelSize(labelSize))
+
+    // Check if 1Y low changed
+    if y1Low != prev1YL and not na(y1Low)
+        if not na(line1YL)
+            line.set_x2(line1YL, bar_index)
+            line.delete(line1YL)
+        if not na(label1YL) and showLabels
+            label.delete(label1YL)
+
+        startBar = not na(bar1YL) ? bar1YL : bar_index
+        line1YL := line.new(x1=startBar, y1=y1Low, x2=bar_index + 100, y2=y1Low,
+                           color=color1YL, style=getLineStyle(style1Y), width=width1Y, extend=extend.right)
+
+        bar1YL := bar_index
+
+        if showLabels
+            label1YL := label.new(x=startBar, y=y1Low, text="1Y L",
+                                 color=color.new(color1YL, 80), textcolor=color1YL,
+                                 style=label.style_label_up, size=getLabelSize(labelSize))
+
+// Update previous values
+prev1DH := d1High
+prev1DL := d1Low
+prev1WH := w1High
+prev1WL := w1Low
+prev1MH := m1High
+prev1ML := m1Low
+prev3MH := m3High
+prev3ML := m3Low
+prev6MH := m6High
+prev6ML := m6Low
+prev1YH := y1High
+prev1YL := y1Low
+
+// Plot invisible plots for legend (optional)
+plot(na, "1D High", color1DH)
+plot(na, "1D Low", color1DL)
+plot(na, "1W High", color1WH)
+plot(na, "1W Low", color1WL)
+plot(na, "1M High", color1MH)
+plot(na, "1M Low", color1ML)
+plot(na, "3M High", color3MH)
+plot(na, "3M Low", color3ML)
+plot(na, "6M High", color6MH)
+plot(na, "6M Low", color6ML)
+plot(na, "1Y High", color1YH)
+plot(na, "1Y Low", color1YL)

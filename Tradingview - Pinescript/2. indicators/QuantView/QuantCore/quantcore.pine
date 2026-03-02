@@ -1,0 +1,1053 @@
+//====================================================================================================================//
+//-QuantLens----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+//====================================================================================================================//
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//©TheTradingSpiderMan
+//@version=6
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//====================================================================================================================//
+
+import TheTradingSpiderMan/MovingAverages/1 as MA
+import TheTradingSpiderMan/ColorsLibrary/2 as CLR
+
+//====================================================================================================================//
+//-Init---------------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+indicator(title = '⚜️ 𝐐𝐮𝐚𝐧𝐭𝐂𝐨𝐫𝐞 ⚜️', precision = 2, overlay = true)
+
+//====================================================================================================================//
+//-Constants----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+COLUMN_HEIGHT_SIDE = 4.1
+COLUMN_HEIGHT_1 = 3.75
+COLUMN_HEIGHT_HALF = 1.5
+COLUMN_HEIGHT_2 = 3
+COLUMN_HEIGHT_3 = 2.5
+COLUMN_WIDTH_1 = 10
+COLUMN_WIDTH_2 = 7
+COLUMN_WIDTH_3 = 1.7
+COLUMN_WIDTH_4 = 16.5
+FRAME_WIDTH = 4
+BORDER_WIDTH = 2
+TABLE_WIDTH_SIDE = 20
+TABLE_WIDTH_CENTER = 33
+TABLE_HEIGHT_SIDE = 100
+TABLE_SMALL_BORDER = 0.01
+TITLE_TEXT_SIZE = size.large
+SMALL_TEXT_SIZE = size.small
+
+BG_COLOR = color.rgb(0, 0, 0)
+BORDER_COLOR = color.rgb(30, 30, 30)
+FRAME_COLOR = color.rgb(35, 35, 35)
+DEFAULT_TEXT_COLOR = color.silver
+GROUP_QUANTDEX = 'QuantDEX'
+GROUP_QUANTVAL = 'QuantVAL'
+GROUP_OSSR = '⚜️ 𝐎𝐒𝐒𝐑 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️'
+
+SOURCE = close
+
+//====================================================================================================================//
+//-Variables----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+// Note: dexScore and valScore variables are now calculated directly in the Calculation section
+// using request.security for multi-timeframe support
+
+//====================================================================================================================//
+//-Settings-----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+//-----QuantLens-----//
+
+// ⚜️ 𝐆𝐞𝐧𝐞𝐫𝐚𝐥 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️
+data_mode = input.string('Live', 'Data Mode', options = ['Live', 'Confirmed'], group = '⚜️ 𝐆𝐞𝐧𝐞𝐫𝐚𝐥 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️', tooltip = 'Live: Real-time data (updates on current bar)\nConfirmed: Only closed/confirmed bar data (more stable, no repainting)')
+candle_type = input.string('Normal OHLC', 'Candle Type', options = ['Normal OHLC', 'Heikin Ashi', 'Heikin Ashi (Real Close)'], group = '⚜️ 𝐆𝐞𝐧𝐞𝐫𝐚𝐥 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️', tooltip = 'Normal OHLC: Standard candles\nHeikin Ashi: Smoothed HA candles\nHeikin Ashi (Real Close): HA with actual close price')
+ha_smoothness = input.int(1, minval = 1, maxval = 100, title = 'HA Candle Smoothness', group = '⚜️ 𝐆𝐞𝐧𝐞𝐫𝐚𝐥 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️', tooltip = 'Smoothness factor for Heikin Ashi candles')
+ha_extra_smooth = input.bool(false, title = 'Add Original HA Smoothness', group = '⚜️ 𝐆𝐞𝐧𝐞𝐫𝐚𝐥 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️', tooltip = 'Add an extra layer of smoothness to Heikin Ashi candles')
+
+// ⚜️ 𝐓𝐢𝐦𝐞𝐟𝐫𝐚𝐦𝐞 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️
+short_tf = input.timeframe(defval = '1D', title = 'Short Term Timeframe', tooltip = 'Timeframe for short Term Trend Analysis', group = '⚜️ 𝐓𝐢𝐦𝐞𝐟𝐫𝐚𝐦𝐞 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️')
+long_tf = input.timeframe(defval = '1W', title = 'Long Term Timeframe', tooltip = 'Timeframe for long Term Trend Analysis', group = '⚜️ 𝐓𝐢𝐦𝐞𝐟𝐫𝐚𝐦𝐞 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️')
+
+// ⚜️ 𝐂𝐨𝐥𝐨𝐫 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️
+colorTheme = input.string("DEFAULT", "Color Theme", options=["DEFAULT", "MONO", "VAPOR", "NEON", "OCEAN", "SUNSET", "FOREST", "CANDY", "FIRE", "ICE"], group = '⚜️ 𝐂𝐨𝐥𝐨𝐫 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️')
+color_main = CLR.bullColor(colorTheme)
+color_text = input.color(defval = DEFAULT_TEXT_COLOR, title = 'Text Color', tooltip = 'Select a color for texts', group = '⚜️ 𝐂𝐨𝐥𝐨𝐫 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️')
+color_mode = input.string('Static', 'Color Mode', options = ['Gradient', 'Static'], tooltip = 'Choose between gradient color based on score or static maximum intensity color', group = '⚜️ 𝐂𝐨𝐥𝐨𝐫 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️')
+
+// ⚜️ 𝐙-𝐒𝐜𝐨𝐫𝐞 𝐕𝐢𝐬𝐮𝐚𝐥𝐬 ⚜️
+GROUP_ZSCORE_VIS = '⚜️ 𝐙-𝐒𝐜𝐨𝐫𝐞 𝐕𝐢𝐬𝐮𝐚𝐥𝐬 ⚜️'
+enableZScoreBorderLines = input.bool(false, 'Enable Border Lines', group = GROUP_ZSCORE_VIS, tooltip = 'Draw markers at screen edges for overbought/oversold zones')
+borderLineStyle = input.string('Glow', 'Border Line Style', options = ['Glow', 'Simple'], group = GROUP_ZSCORE_VIS, tooltip = 'Glow: layered circles with glow effect\nSimple: single circle at screen edge')
+zScoreThreshold = input.float(2.0, 'Z-Score Threshold', minval = 0.5, maxval = 5.0, step = 0.5, group = GROUP_ZSCORE_VIS, tooltip = 'Z-Score threshold for visual signals')
+colorOversold = CLR.bullColor(colorTheme, 50)
+colorOverbought = CLR.bearColor(colorTheme, 50)
+
+// ⚜️ 𝐒𝐜𝐨𝐫𝐞 𝐇𝐢𝐬𝐭𝐨𝐫𝐲 ⚜️
+GROUP_SCORE_HISTORY = '⚜️ 𝐒𝐜𝐨𝐫𝐞 𝐇𝐢𝐬𝐭𝐨𝐫𝐲 ⚜️'
+dayOffset1 = input.int(1, 'Day 1 Offset', minval = 1, maxval = 100, group = GROUP_SCORE_HISTORY, tooltip = 'Bars back for Day 1')
+dayOffset2 = input.int(2, 'Day 2 Offset', minval = 1, maxval = 100, group = GROUP_SCORE_HISTORY, tooltip = 'Bars back for Day 2')
+dayOffset3 = input.int(3, 'Day 3 Offset', minval = 1, maxval = 100, group = GROUP_SCORE_HISTORY, tooltip = 'Bars back for Day 3')
+rocMode = input.string('Previous Day', 'ROC Mode', options = ['Previous Day', 'From Today'], group = GROUP_SCORE_HISTORY, tooltip = 'Previous Day: change between consecutive days\nFrom Today: change from current day to each historical day')
+// color_capital = input.color(defval = DEFAULT_CAPITAL_COLOR, title = 'Capital Color', tooltip = 'Select a color for your capital', group = '⚜️ 𝐂𝐨𝐥𝐨𝐫 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️')
+
+// // ⚜️ 𝐏𝐨𝐫𝐭𝐟𝐨𝐥𝐢𝐨 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️
+// capital = input.float(defval = 1000000, title = 'Capital', tooltip = 'Insert your current capital in USD', group = '⚜️ 𝐏𝐨𝐫𝐭𝐟𝐨𝐥𝐢𝐨 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️')
+// portfolio_weighting = input.float(defval = 0.9, title = 'Portfolio Weighting', tooltip = 'Set how much of your Portfolio should be invested conservatively', group = '⚜️ 𝐏𝐨𝐫𝐭𝐟𝐨𝐥𝐢𝐨 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️', minval = 0.0, maxval = 1.0, step = 0.05)
+
+// ⚜️ 𝐈𝐧𝐝𝐢𝐜𝐚𝐭𝐨𝐫 𝐈𝐧𝐩𝐮𝐭𝐬 ⚜️
+// indicatorInput01 = input.source(close, title="Indicator 01", group = "⚜️ 𝐈𝐧𝐝𝐢𝐜𝐚𝐭𝐨𝐫 𝐈𝐧𝐩𝐮𝐭𝐬 ⚜️", inline = "Indicator01")
+
+//-----QuantDEX Mode-----//
+Dex_MA_Type = input.string('SMA', 'MA Type', options = ['SMA', 'EMA', 'WMA', 'VWMA', 'RMA', 'HMA', 'DEMA', 'TEMA', 'KAMA', 'T3', 'ALMA', 'FRAMA', 'VIDYA', 'JMA', 'MCGINLEY', 'ZLEMA', 'LSMA', 'TMA', 'SUPERSMOOTHER', 'LAGUERRE'], group = GROUP_QUANTDEX, tooltip = 'Select MA type for QuantDEX calculations')
+
+y_001_length = input(5, 'Y-001 MA Length', group = GROUP_QUANTDEX)
+y_002_length = input(10, 'Y-002 MA Length', group = GROUP_QUANTDEX)
+y_003_length = input(15, 'Y-003 MA Length', group = GROUP_QUANTDEX)
+y_004_length = input(20, 'Y-004 MA Length', group = GROUP_QUANTDEX)
+y_005_length = input(25, 'Y-005 MA Length', group = GROUP_QUANTDEX)
+y_006_length = input(30, 'Y-006 MA Length', group = GROUP_QUANTDEX)
+y_007_length = input(35, 'Y-007 MA Length', group = GROUP_QUANTDEX)
+y_008_length = input(40, 'Y-008 MA Length', group = GROUP_QUANTDEX)
+y_009_length = input(45, 'Y-009 MA Length', group = GROUP_QUANTDEX)
+y_010_length = input(50, 'Y-010 MA Length', group = GROUP_QUANTDEX)
+y_011_length = input(55, 'Y-011 MA Length', group = GROUP_QUANTDEX)
+y_012_length = input(60, 'Y-012 MA Length', group = GROUP_QUANTDEX)
+y_013_length = input(65, 'Y-013 MA Length', group = GROUP_QUANTDEX)
+y_014_length = input(70, 'Y-014 MA Length', group = GROUP_QUANTDEX)
+y_015_length = input(75, 'Y-015 MA Length', group = GROUP_QUANTDEX)
+y_016_length = input(80, 'Y-016 MA Length', group = GROUP_QUANTDEX)
+y_017_length = input(85, 'Y-017 MA Length', group = GROUP_QUANTDEX)
+y_018_length = input(90, 'Y-018 MA Length', group = GROUP_QUANTDEX)
+y_019_length = input(95, 'Y-019 MA Length', group = GROUP_QUANTDEX)
+y_020_length = input(100, 'Y-020 MA Length', group = GROUP_QUANTDEX)
+
+x_001_length = input(10, 'X-001 Z-Score Length', group = GROUP_QUANTVAL)
+x_002_length = input(20, 'X-002 Z-Score Length', group = GROUP_QUANTVAL)
+x_003_length = input(30, 'X-003 Z-Score Length', group = GROUP_QUANTVAL)
+x_004_length = input(40, 'X-004 Z-Score Length', group = GROUP_QUANTVAL)
+x_005_length = input(50, 'X-005 Z-Score Length', group = GROUP_QUANTVAL)
+x_006_length = input(60, 'X-006 Z-Score Length', group = GROUP_QUANTVAL)
+x_007_length = input(70, 'X-007 Z-Score Length', group = GROUP_QUANTVAL)
+x_008_length = input(80, 'X-008 Z-Score Length', group = GROUP_QUANTVAL)
+x_009_length = input(90, 'X-009 Z-Score Length', group = GROUP_QUANTVAL)
+x_010_length = input(100, 'X-010 Z-Score Length', group = GROUP_QUANTVAL)
+x_011_length = input(110, 'X-011 Z-Score Length', group = GROUP_QUANTVAL)
+x_012_length = input(120, 'X-012 Z-Score Length', group = GROUP_QUANTVAL)
+x_013_length = input(130, 'X-013 Z-Score Length', group = GROUP_QUANTVAL)
+x_014_length = input(140, 'X-014 Z-Score Length', group = GROUP_QUANTVAL)
+x_015_length = input(150, 'X-015 Z-Score Length', group = GROUP_QUANTVAL)
+x_016_length = input(160, 'X-016 Z-Score Length', group = GROUP_QUANTVAL)
+x_017_length = input(170, 'X-017 Z-Score Length', group = GROUP_QUANTVAL)
+x_018_length = input(180, 'X-018 Z-Score Length', group = GROUP_QUANTVAL)
+x_019_length = input(190, 'X-019 Z-Score Length', group = GROUP_QUANTVAL)
+x_020_length = input(200, 'X-020 Z-Score Length', group = GROUP_QUANTVAL)
+
+
+//====================================================================================================================//
+//-Functions----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+trendColor(score) =>
+    if color_mode == 'Static'
+        score > 0 ? color.new(color_main, 30) : score < 0 ? color.new(color_main, 70) : color.new(color_main, 50)
+    else // Gradient mode
+        if score < -0.9 and score >= -1
+            color.new(color_main, 70)
+        else if score < -0.8 and score >= -0.9
+            color.new(color_main, 68)
+        else if score < -0.7 and score >= -0.8
+            color.new(color_main, 66)
+        else if score < -0.6 and score >= -0.7
+            color.new(color_main, 64)
+        else if score < -0.5 and score >= -0.6
+            color.new(color_main, 62)
+        else if score < -0.4 and score >= -0.5
+            color.new(color_main, 60)
+        else if score < -0.3 and score >= -0.4
+            color.new(color_main, 58)
+        else if score < -0.2 and score >= -0.3
+            color.new(color_main, 56)
+        else if score < -0.1 and score >= -0.2
+            color.new(color_main, 54)
+        else if score < 0.0 and score >= -0.1
+            color.new(color_main, 52)
+        else if score == 0.0
+            color.new(color_main, 50)
+        else if score > 0.0 and score <= 0.1
+            color.new(color_main, 48)
+        else if score > 0.1 and score <= 0.2
+            color.new(color_main, 46)
+        else if score > 0.2 and score <= 0.3
+            color.new(color_main, 44)
+        else if score > 0.3 and score <= 0.4
+            color.new(color_main, 42)
+        else if score > 0.4 and score <= 0.5
+            color.new(color_main, 40)
+        else if score > 0.5 and score <= 0.6
+            color.new(color_main, 38)
+        else if score > 0.6 and score <= 0.7
+            color.new(color_main, 36)
+        else if score > 0.7 and score <= 0.8
+            color.new(color_main, 34)
+        else if score > 0.8 and score <= 0.9
+            color.new(color_main, 32)
+        else if score > 0.9 and score <= 1
+            color.new(color_main, 30)
+        else
+            color.new(color_main, 50)
+
+valuationColor(zscore) =>
+    if zscore <= -3
+        color.new(color_main, 20)
+    else if zscore <= -2.5 and zscore > -3
+        color.new(color_main, 25)
+    else if zscore <= -2 and zscore > -2.5
+        color.new(color_main, 30)
+    else if zscore <= -1.5 and zscore > -2
+        color.new(color_main, 35)
+    else if zscore <= -1 and zscore > -1.5
+        color.new(color_main, 40)
+    else if zscore <= -0.5 and zscore > -1
+        color.new(color_main, 45)
+    else if zscore < 0 and zscore > -0.5
+        color.new(color_main, 48)
+    else if zscore == 0
+        color.new(color_main, 50)
+    else if zscore > 0 and zscore <= 0.5
+        color.new(color_main, 52)
+    else if zscore > 0.5 and zscore <= 1
+        color.new(color_main, 55)
+    else if zscore > 1 and zscore <= 1.5
+        color.new(color_main, 60)
+    else if zscore > 1.5 and zscore <= 2
+        color.new(color_main, 65)
+    else if zscore > 2 and zscore <= 2.5
+        color.new(color_main, 70)
+    else if zscore > 2.5 and zscore <= 3
+        color.new(color_main, 75)
+    else if zscore > 3
+        color.new(color_main, 80)
+    else
+        color.new(color_main, 50)
+
+// Background color based on Z-Score thresholds (0, 1, 2, 3 and -1, -2, -3)
+bgValuationColor(zscore) =>
+    if zscore <= -3
+        color.new(color_main, 92)
+    else if zscore <= -2.5 and zscore > -3
+        color.new(color_main, 93)
+    else if zscore <= -2 and zscore > -2.5
+        color.new(color_main, 94)
+    else if zscore <= -1.5 and zscore > -2
+        color.new(color_main, 95)
+    else if zscore <= -1 and zscore > -1.5
+        color.new(color_main, 96)
+    else if zscore <= -0.5 and zscore > -1
+        color.new(color_main, 97)
+    else if zscore < 0 and zscore > -0.5
+        color.new(color_main, 98)
+    else if zscore == 0
+        color.new(color_main, 99)
+    else if zscore > 0 and zscore <= 0.5
+        color.new(color_main, 98)
+    else if zscore > 0.5 and zscore <= 1
+        color.new(color_main, 97)
+    else if zscore > 1 and zscore <= 1.5
+        color.new(color_main, 96)
+    else if zscore > 1.5 and zscore <= 2
+        color.new(color_main, 95)
+    else if zscore > 2 and zscore <= 2.5
+        color.new(color_main, 94)
+    else if zscore > 2.5 and zscore <= 3
+        color.new(color_main, 93)
+    else if zscore > 3
+        color.new(color_main, 92)
+    else
+        color.new(color_main, 99)
+
+calcSlope(source, length) =>
+    max_bars_back(source, 5000)
+    if not barstate.islast or length <= 1
+        [float(na), float(na), float(na)]
+    else
+        sumX = 0.0
+        sumY = 0.0
+        sumXSqr = 0.0
+        sumXY = 0.0
+        for i = 0 to length - 1 by 1
+            val = source[i]
+            per = i + 1.0
+            sumX := sumX + per
+            sumY := sumY + val
+            sumXSqr := sumXSqr + per * per
+            sumXY := sumXY + val * per
+            sumXY
+        slope = (length * sumXY - sumX * sumY) / (length * sumXSqr - sumX * sumX)
+        average = sumY / length
+        intercept = average - slope * sumX / length + slope
+        [slope, average, intercept]
+
+calcDev(source, length, slope, average, intercept) =>
+    upDev = 0.0
+    dnDev = 0.0
+    stdDevAcc = 0.0
+    dsxx = 0.0
+    dsyy = 0.0
+    dsxy = 0.0
+    periods = length - 1
+    daY = intercept + slope * periods / 2
+    val = intercept
+    for j = 0 to periods by 1
+        price = high[j] - val
+        if price > upDev
+            upDev := price
+            upDev
+        price := val - low[j]
+        if price > dnDev
+            dnDev := price
+            dnDev
+        price := source[j]
+        dxt = price - average
+        dyt = val - daY
+        price := price - val
+        stdDevAcc := stdDevAcc + price * price
+        dsxx := dsxx + dxt * dxt
+        dsyy := dsyy + dyt * dyt
+        dsxy := dsxy + dxt * dyt
+        val := val + slope
+        val
+    stdDev = math.sqrt(stdDevAcc / (periods == 0 ? 1 : periods))
+    pearsonR = dsxx == 0 or dsyy == 0 ? 0 : dsxy / math.sqrt(dsxx * dsyy)
+    [stdDev, pearsonR, upDev, dnDev]
+
+// QuantDEX: Check if price is above or below MA (returns 1 for above, -1 for below, 0 for equal)
+priceVsMA(length, maType) =>
+    ma = MA.selector(SOURCE, length, maType)
+    SOURCE > ma ? 1 : SOURCE < ma ? -1 : 0
+
+// QuantVAL: Calculate Z-Score of price
+priceZScore(length) =>
+    mean = ta.sma(SOURCE, length)
+    stdDev = ta.stdev(SOURCE, length)
+    stdDev != 0 ? (SOURCE - mean) / stdDev : 0.0
+
+//====================================================================================================================//
+//-Calculation--------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+// Data Mode: offset for confirmed data (use previous bar data when in Confirmed mode)
+confirmedOffset = data_mode == 'Confirmed' ? 1 : 0
+
+//-----QuantDEX: Price vs MA using request.security for timeframes-----//
+
+// Short Term QuantDEX (Y-001 to Y-020)
+dexScore_01_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_001_length, Dex_MA_Type))
+dexScore_02_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_002_length, Dex_MA_Type))
+dexScore_03_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_003_length, Dex_MA_Type))
+dexScore_04_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_004_length, Dex_MA_Type))
+dexScore_05_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_005_length, Dex_MA_Type))
+dexScore_06_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_006_length, Dex_MA_Type))
+dexScore_07_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_007_length, Dex_MA_Type))
+dexScore_08_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_008_length, Dex_MA_Type))
+dexScore_09_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_009_length, Dex_MA_Type))
+dexScore_10_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_010_length, Dex_MA_Type))
+dexScore_11_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_011_length, Dex_MA_Type))
+dexScore_12_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_012_length, Dex_MA_Type))
+dexScore_13_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_013_length, Dex_MA_Type))
+dexScore_14_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_014_length, Dex_MA_Type))
+dexScore_15_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_015_length, Dex_MA_Type))
+dexScore_16_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_016_length, Dex_MA_Type))
+dexScore_17_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_017_length, Dex_MA_Type))
+dexScore_18_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_018_length, Dex_MA_Type))
+dexScore_19_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_019_length, Dex_MA_Type))
+dexScore_20_s_raw = request.security(syminfo.tickerid, short_tf, priceVsMA(y_020_length, Dex_MA_Type))
+
+// Apply confirmed offset for Short Term QuantDEX
+dexScore_01_s = dexScore_01_s_raw[confirmedOffset]
+dexScore_02_s = dexScore_02_s_raw[confirmedOffset]
+dexScore_03_s = dexScore_03_s_raw[confirmedOffset]
+dexScore_04_s = dexScore_04_s_raw[confirmedOffset]
+dexScore_05_s = dexScore_05_s_raw[confirmedOffset]
+dexScore_06_s = dexScore_06_s_raw[confirmedOffset]
+dexScore_07_s = dexScore_07_s_raw[confirmedOffset]
+dexScore_08_s = dexScore_08_s_raw[confirmedOffset]
+dexScore_09_s = dexScore_09_s_raw[confirmedOffset]
+dexScore_10_s = dexScore_10_s_raw[confirmedOffset]
+dexScore_11_s = dexScore_11_s_raw[confirmedOffset]
+dexScore_12_s = dexScore_12_s_raw[confirmedOffset]
+dexScore_13_s = dexScore_13_s_raw[confirmedOffset]
+dexScore_14_s = dexScore_14_s_raw[confirmedOffset]
+dexScore_15_s = dexScore_15_s_raw[confirmedOffset]
+dexScore_16_s = dexScore_16_s_raw[confirmedOffset]
+dexScore_17_s = dexScore_17_s_raw[confirmedOffset]
+dexScore_18_s = dexScore_18_s_raw[confirmedOffset]
+dexScore_19_s = dexScore_19_s_raw[confirmedOffset]
+dexScore_20_s = dexScore_20_s_raw[confirmedOffset]
+
+// Long Term QuantDEX (Y-001 to Y-020)
+dexScore_01_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_001_length, Dex_MA_Type))
+dexScore_02_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_002_length, Dex_MA_Type))
+dexScore_03_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_003_length, Dex_MA_Type))
+dexScore_04_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_004_length, Dex_MA_Type))
+dexScore_05_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_005_length, Dex_MA_Type))
+dexScore_06_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_006_length, Dex_MA_Type))
+dexScore_07_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_007_length, Dex_MA_Type))
+dexScore_08_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_008_length, Dex_MA_Type))
+dexScore_09_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_009_length, Dex_MA_Type))
+dexScore_10_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_010_length, Dex_MA_Type))
+dexScore_11_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_011_length, Dex_MA_Type))
+dexScore_12_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_012_length, Dex_MA_Type))
+dexScore_13_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_013_length, Dex_MA_Type))
+dexScore_14_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_014_length, Dex_MA_Type))
+dexScore_15_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_015_length, Dex_MA_Type))
+dexScore_16_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_016_length, Dex_MA_Type))
+dexScore_17_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_017_length, Dex_MA_Type))
+dexScore_18_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_018_length, Dex_MA_Type))
+dexScore_19_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_019_length, Dex_MA_Type))
+dexScore_20_l_raw = request.security(syminfo.tickerid, long_tf, priceVsMA(y_020_length, Dex_MA_Type))
+
+// Apply confirmed offset for Long Term QuantDEX
+dexScore_01_l = dexScore_01_l_raw[confirmedOffset]
+dexScore_02_l = dexScore_02_l_raw[confirmedOffset]
+dexScore_03_l = dexScore_03_l_raw[confirmedOffset]
+dexScore_04_l = dexScore_04_l_raw[confirmedOffset]
+dexScore_05_l = dexScore_05_l_raw[confirmedOffset]
+dexScore_06_l = dexScore_06_l_raw[confirmedOffset]
+dexScore_07_l = dexScore_07_l_raw[confirmedOffset]
+dexScore_08_l = dexScore_08_l_raw[confirmedOffset]
+dexScore_09_l = dexScore_09_l_raw[confirmedOffset]
+dexScore_10_l = dexScore_10_l_raw[confirmedOffset]
+dexScore_11_l = dexScore_11_l_raw[confirmedOffset]
+dexScore_12_l = dexScore_12_l_raw[confirmedOffset]
+dexScore_13_l = dexScore_13_l_raw[confirmedOffset]
+dexScore_14_l = dexScore_14_l_raw[confirmedOffset]
+dexScore_15_l = dexScore_15_l_raw[confirmedOffset]
+dexScore_16_l = dexScore_16_l_raw[confirmedOffset]
+dexScore_17_l = dexScore_17_l_raw[confirmedOffset]
+dexScore_18_l = dexScore_18_l_raw[confirmedOffset]
+dexScore_19_l = dexScore_19_l_raw[confirmedOffset]
+dexScore_20_l = dexScore_20_l_raw[confirmedOffset]
+
+//-----QuantVAL: Price Z-Score using request.security for timeframes-----//
+
+// Short Term QuantVAL (X-001 to X-020)
+valScore_01_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_001_length))
+valScore_02_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_002_length))
+valScore_03_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_003_length))
+valScore_04_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_004_length))
+valScore_05_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_005_length))
+valScore_06_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_006_length))
+valScore_07_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_007_length))
+valScore_08_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_008_length))
+valScore_09_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_009_length))
+valScore_10_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_010_length))
+valScore_11_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_011_length))
+valScore_12_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_012_length))
+valScore_13_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_013_length))
+valScore_14_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_014_length))
+valScore_15_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_015_length))
+valScore_16_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_016_length))
+valScore_17_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_017_length))
+valScore_18_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_018_length))
+valScore_19_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_019_length))
+valScore_20_s_raw = request.security(syminfo.tickerid, short_tf, priceZScore(x_020_length))
+
+// Apply confirmed offset for Short Term QuantVAL
+valScore_01_s = valScore_01_s_raw[confirmedOffset]
+valScore_02_s = valScore_02_s_raw[confirmedOffset]
+valScore_03_s = valScore_03_s_raw[confirmedOffset]
+valScore_04_s = valScore_04_s_raw[confirmedOffset]
+valScore_05_s = valScore_05_s_raw[confirmedOffset]
+valScore_06_s = valScore_06_s_raw[confirmedOffset]
+valScore_07_s = valScore_07_s_raw[confirmedOffset]
+valScore_08_s = valScore_08_s_raw[confirmedOffset]
+valScore_09_s = valScore_09_s_raw[confirmedOffset]
+valScore_10_s = valScore_10_s_raw[confirmedOffset]
+valScore_11_s = valScore_11_s_raw[confirmedOffset]
+valScore_12_s = valScore_12_s_raw[confirmedOffset]
+valScore_13_s = valScore_13_s_raw[confirmedOffset]
+valScore_14_s = valScore_14_s_raw[confirmedOffset]
+valScore_15_s = valScore_15_s_raw[confirmedOffset]
+valScore_16_s = valScore_16_s_raw[confirmedOffset]
+valScore_17_s = valScore_17_s_raw[confirmedOffset]
+valScore_18_s = valScore_18_s_raw[confirmedOffset]
+valScore_19_s = valScore_19_s_raw[confirmedOffset]
+valScore_20_s = valScore_20_s_raw[confirmedOffset]
+
+// Long Term QuantVAL (X-001 to X-020)
+valScore_01_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_001_length))
+valScore_02_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_002_length))
+valScore_03_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_003_length))
+valScore_04_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_004_length))
+valScore_05_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_005_length))
+valScore_06_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_006_length))
+valScore_07_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_007_length))
+valScore_08_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_008_length))
+valScore_09_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_009_length))
+valScore_10_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_010_length))
+valScore_11_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_011_length))
+valScore_12_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_012_length))
+valScore_13_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_013_length))
+valScore_14_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_014_length))
+valScore_15_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_015_length))
+valScore_16_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_016_length))
+valScore_17_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_017_length))
+valScore_18_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_018_length))
+valScore_19_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_019_length))
+valScore_20_l_raw = request.security(syminfo.tickerid, long_tf, priceZScore(x_020_length))
+
+// Apply confirmed offset for Long Term QuantVAL
+valScore_01_l = valScore_01_l_raw[confirmedOffset]
+valScore_02_l = valScore_02_l_raw[confirmedOffset]
+valScore_03_l = valScore_03_l_raw[confirmedOffset]
+valScore_04_l = valScore_04_l_raw[confirmedOffset]
+valScore_05_l = valScore_05_l_raw[confirmedOffset]
+valScore_06_l = valScore_06_l_raw[confirmedOffset]
+valScore_07_l = valScore_07_l_raw[confirmedOffset]
+valScore_08_l = valScore_08_l_raw[confirmedOffset]
+valScore_09_l = valScore_09_l_raw[confirmedOffset]
+valScore_10_l = valScore_10_l_raw[confirmedOffset]
+valScore_11_l = valScore_11_l_raw[confirmedOffset]
+valScore_12_l = valScore_12_l_raw[confirmedOffset]
+valScore_13_l = valScore_13_l_raw[confirmedOffset]
+valScore_14_l = valScore_14_l_raw[confirmedOffset]
+valScore_15_l = valScore_15_l_raw[confirmedOffset]
+valScore_16_l = valScore_16_l_raw[confirmedOffset]
+valScore_17_l = valScore_17_l_raw[confirmedOffset]
+valScore_18_l = valScore_18_l_raw[confirmedOffset]
+valScore_19_l = valScore_19_l_raw[confirmedOffset]
+valScore_20_l = valScore_20_l_raw[confirmedOffset]
+
+//====================================================================================================================//
+//-Aggregation--------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+// QuantDEX Aggregate Scores
+dexScore_s = math.round(math.avg(dexScore_01_s, dexScore_02_s, dexScore_03_s, dexScore_04_s, dexScore_05_s, dexScore_06_s, dexScore_07_s, dexScore_08_s, dexScore_09_s, dexScore_10_s, dexScore_11_s, dexScore_12_s, dexScore_13_s, dexScore_14_s, dexScore_15_s, dexScore_16_s, dexScore_17_s, dexScore_18_s, dexScore_19_s, dexScore_20_s), 3)
+
+dexScore_l = math.round(math.avg(dexScore_01_l, dexScore_02_l, dexScore_03_l, dexScore_04_l, dexScore_05_l, dexScore_06_l, dexScore_07_l, dexScore_08_l, dexScore_09_l, dexScore_10_l, dexScore_11_l, dexScore_12_l, dexScore_13_l, dexScore_14_l, dexScore_15_l, dexScore_16_l, dexScore_17_l, dexScore_18_l, dexScore_19_l, dexScore_20_l), 3)
+
+// QuantVAL Aggregate Scores
+valScore_s = math.round(math.avg(valScore_01_s, valScore_02_s, valScore_03_s, valScore_04_s, valScore_05_s, valScore_06_s, valScore_07_s, valScore_08_s, valScore_09_s, valScore_10_s, valScore_11_s, valScore_12_s, valScore_13_s, valScore_14_s, valScore_15_s, valScore_16_s, valScore_17_s, valScore_18_s, valScore_19_s, valScore_20_s), 2)
+
+valScore_l = math.round(math.avg(valScore_01_l, valScore_02_l, valScore_03_l, valScore_04_l, valScore_05_l, valScore_06_l, valScore_07_l, valScore_08_l, valScore_09_l, valScore_10_l, valScore_11_l, valScore_12_l, valScore_13_l, valScore_14_l, valScore_15_l, valScore_16_l, valScore_17_l, valScore_18_l, valScore_19_l, valScore_20_l), 2)
+
+//-----OSSR: Sharpe, Sortino, Omega Ratios-----//
+ossr_lookback = input.int(30, 'Lookback Period', minval = 10, maxval = 500, group = GROUP_OSSR, tooltip = 'Number of bars to calculate ratios')
+ossr_periodsPerYear = input.int(365, 'Periods Per Year', minval = 1, maxval = 525600, group = GROUP_OSSR, tooltip = '365 for crypto, 252 for stocks, 52 for weekly, 12 for monthly')
+ossr_riskFreeRate = input.float(0.0, 'Risk-Free Rate (%)', minval = 0.0, step = 0.1, group = GROUP_OSSR, tooltip = 'Annual risk-free rate in percentage')
+
+// Calculate returns
+ossr_returns = ta.change(close) / close[1]
+ossr_meanReturn = ta.sma(ossr_returns, ossr_lookback)
+ossr_adjustedRiskFreeRate = (ossr_riskFreeRate / 100) / ossr_periodsPerYear
+ossr_excessReturn = ossr_meanReturn - ossr_adjustedRiskFreeRate
+ossr_stdDev = ta.stdev(ossr_returns, ossr_lookback)
+
+// Sharpe Ratio
+sharpeRatio = ossr_stdDev != 0 ? (ossr_excessReturn / ossr_stdDev) * math.sqrt(ossr_periodsPerYear) : 0
+
+// Sortino Ratio (downside deviation)
+float ossr_sumSquaredDownside = 0.0
+for i = 0 to ossr_lookback - 1
+    ossr_ret = ossr_returns[i]
+    ossr_excessRet = ossr_ret - ossr_adjustedRiskFreeRate
+    if ossr_excessRet < 0
+        ossr_sumSquaredDownside += ossr_excessRet * ossr_excessRet
+ossr_downsideDeviation = ossr_lookback > 0 ? math.sqrt(ossr_sumSquaredDownside / ossr_lookback) : 0
+sortinoRatio = ossr_downsideDeviation != 0 ? (ossr_excessReturn / ossr_downsideDeviation) * math.sqrt(ossr_periodsPerYear) : 0
+
+// Omega Ratio
+float ossr_sumGains = 0.0
+float ossr_sumLosses = 0.0
+for i = 0 to ossr_lookback - 1
+    ossr_ret2 = ossr_returns[i]
+    ossr_excessRet2 = ossr_ret2 - ossr_adjustedRiskFreeRate
+    if ossr_excessRet2 > 0
+        ossr_sumGains += ossr_excessRet2
+    else if ossr_excessRet2 < 0
+        ossr_sumLosses += math.abs(ossr_excessRet2)
+omegaRatio = ossr_sumLosses != 0 ? ossr_sumGains / ossr_sumLosses : (ossr_sumGains > 0 ? 2.0 : 1.0)
+
+//-----EMA System-----//
+GROUP_EMA = '⚜️ 𝐄𝐌𝐀 𝐒𝐲𝐬𝐭𝐞𝐦 ⚜️'
+emaS_value = input.int(12, minval = 1, title = 'EMA Fast', group = GROUP_EMA)
+emaB_value = input.int(21, minval = 1, title = 'EMA Slow', group = GROUP_EMA)
+ema50_value = input.int(50, minval = 1, title = 'EMA 50', group = GROUP_EMA)
+ema100_value = input.int(100, minval = 1, title = 'EMA 100', group = GROUP_EMA)
+ema200_value = input.int(200, minval = 1, title = 'EMA 200', group = GROUP_EMA)
+ema_MA_Type = input.string('EMA', 'MA Type', options = ['SMA', 'EMA', 'WMA', 'VWMA', 'RMA', 'HMA', 'DEMA', 'TEMA', 'KAMA', 'T3', 'ALMA', 'FRAMA', 'VIDYA', 'JMA', 'MCGINLEY', 'ZLEMA', 'LSMA', 'TMA', 'SUPERSMOOTHER', 'LAGUERRE'], group = GROUP_EMA, tooltip = 'Select MA type for EMA System')
+enableEmaBands = input.bool(true, 'Show EMA Bands', group = GROUP_EMA)
+enableEmaBgColor = input.bool(false, 'Enable EMA Background Color', group = GROUP_EMA)
+emaUpTrendColor = CLR.bullColor(colorTheme)
+emaDownTrendColor = CLR.bearColor(colorTheme)
+emaBgBullishCol = CLR.bullColor(colorTheme, 90)
+emaBgBearishCol = CLR.bearColor(colorTheme, 90)
+
+emaS = MA.selector(close, emaS_value, ema_MA_Type)
+emaB = MA.selector(close, emaB_value, ema_MA_Type)
+ema50 = MA.selector(close, ema50_value, ema_MA_Type)
+ema100 = MA.selector(close, ema100_value, ema_MA_Type)
+ema200 = MA.selector(close, ema200_value, ema_MA_Type)
+
+// EMA Trend State
+EMA_UpTrend = emaS >= emaB
+EMA_DownTrend = emaS < emaB
+emaTrendState = EMA_UpTrend ? 'Bullish' : 'Bearish'
+emaTrendColor = EMA_UpTrend ? emaUpTrendColor : emaDownTrendColor
+
+// EMA Spread (deviation between bands as percentage)
+emaSpread = math.abs(emaS - emaB) / emaB * 100
+
+// EMA Background Color
+emaBgColor = EMA_UpTrend ? emaBgBullishCol : emaBgBearishCol
+
+// EMA Alerts
+alertcondition(ta.crossover(emaS, emaB), title = 'EMA Trend Up', message = 'EMA Trend Up - {{ticker}} - {{interval}}')
+alertcondition(ta.crossunder(emaS, emaB), title = 'EMA Trend Down', message = 'EMA Trend Down - {{ticker}} - {{interval}}')
+
+//====================================================================================================================//
+//-Output-------------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+//-----Init QuantLens-----//
+
+// Calculate historical scores using custom offsets
+valScore_day1 = valScore_s[dayOffset1]
+valScore_day2 = valScore_s[dayOffset2]
+valScore_day3 = valScore_s[dayOffset3]
+dexScore_day1 = dexScore_s[dayOffset1]
+dexScore_day2 = dexScore_s[dayOffset2]
+dexScore_day3 = dexScore_s[dayOffset3]
+
+// Calculate ROC based on mode
+useFromToday = rocMode == 'From Today'
+// Previous Day mode: change between consecutive days
+// From Today mode: change from current day to each historical day
+valScore_roc1 = valScore_s - valScore_day1
+valScore_roc2 = useFromToday ? valScore_s - valScore_day2 : valScore_day1 - valScore_day2
+valScore_roc3 = useFromToday ? valScore_s - valScore_day3 : valScore_day2 - valScore_day3
+dexScore_roc1 = dexScore_s - dexScore_day1
+dexScore_roc2 = useFromToday ? dexScore_s - dexScore_day2 : dexScore_day1 - dexScore_day2
+dexScore_roc3 = useFromToday ? dexScore_s - dexScore_day3 : dexScore_day2 - dexScore_day3
+
+// Table: 9 columns (border + 3 val days + center + 3 dex days + border), 6 rows
+var tableScale = table.new(position = position.bottom_center, columns = 9, rows = 6, bgcolor = BG_COLOR, border_width = BORDER_WIDTH, border_color = BORDER_COLOR, frame_color = FRAME_COLOR, frame_width = FRAME_WIDTH)
+//Corners
+table.merge_cells(tableScale, 0, 0, 0, 0)
+table.merge_cells(tableScale, 8, 0, 8, 0)
+table.merge_cells(tableScale, 0, 5, 0, 5)
+table.merge_cells(tableScale, 8, 5, 8, 5)
+//Vertical
+table.merge_cells(tableScale, 0, 1, 0, 4)
+table.merge_cells(tableScale, 8, 1, 8, 4)
+//Horizontal
+table.merge_cells(tableScale, 1, 0, 7, 0)
+table.merge_cells(tableScale, 1, 5, 7, 5)
+// Title row merge
+table.merge_cells(tableScale, 1, 1, 7, 1)
+
+var tableFairValue = table.new(position = position.top_center, columns = 18, rows = 5, bgcolor = BG_COLOR, border_width = BORDER_WIDTH, border_color = BORDER_COLOR, frame_color = FRAME_COLOR, frame_width = FRAME_WIDTH)
+//Corners
+table.merge_cells(tableFairValue, 0, 0, 0, 0)
+table.merge_cells(tableFairValue, 17, 0, 17, 0)
+table.merge_cells(tableFairValue, 0, 4, 0, 4)
+table.merge_cells(tableFairValue, 17, 4, 17, 4)
+//Vertical
+table.merge_cells(tableFairValue, 0, 1, 0, 3)
+table.merge_cells(tableFairValue, 17, 1, 17, 3)
+//Horizontal
+table.merge_cells(tableFairValue, 1, 0, 17, 0)
+table.merge_cells(tableFairValue, 1, 4, 17, 4)
+
+table.merge_cells(tableFairValue, 1, 1, 16, 1)
+table.merge_cells(tableFairValue, 1, 2, 5, 2)
+table.merge_cells(tableFairValue, 6, 2, 11, 2)
+table.merge_cells(tableFairValue, 12, 2, 16, 2)
+table.merge_cells(tableFairValue, 1, 3, 8, 3)
+table.merge_cells(tableFairValue, 9, 3, 16, 3)
+
+var tableIndicator = table.new(position = position.middle_right, columns = 5, rows = 25, bgcolor = BG_COLOR, border_width = BORDER_WIDTH, border_color = BORDER_COLOR, frame_color = FRAME_COLOR, frame_width = FRAME_WIDTH)
+//Corners
+table.merge_cells(tableIndicator, 0, 0, 0, 0)
+table.merge_cells(tableIndicator, 0, 24, 0, 24)
+table.merge_cells(tableIndicator, 4, 0, 4, 0)
+table.merge_cells(tableIndicator, 4, 24, 4, 24)
+//Vertical
+table.merge_cells(tableIndicator, 0, 1, 0, 23)
+table.merge_cells(tableIndicator, 4, 1, 4, 23)
+//Horizontal
+table.merge_cells(tableIndicator, 1, 0, 3, 0)
+table.merge_cells(tableIndicator, 1, 24, 3, 24)
+
+table.merge_cells(tableIndicator, 1, 1, 3, 1)
+
+var tableValuation = table.new(position = position.middle_left, columns = 5, rows = 25, bgcolor = BG_COLOR, border_width = BORDER_WIDTH, border_color = BORDER_COLOR, frame_color = FRAME_COLOR, frame_width = FRAME_WIDTH)
+//Corners
+table.merge_cells(tableValuation, 0, 0, 0, 0)
+table.merge_cells(tableValuation, 0, 24, 0, 24)
+table.merge_cells(tableValuation, 4, 0, 4, 0)
+table.merge_cells(tableValuation, 4, 24, 4, 24)
+//Vertical
+table.merge_cells(tableValuation, 0, 1, 0, 23)
+table.merge_cells(tableValuation, 4, 1, 4, 23)
+//Horizontal
+table.merge_cells(tableValuation, 1, 0, 3, 0)
+table.merge_cells(tableValuation, 1, 24, 3, 24)
+
+table.merge_cells(tableValuation, 1, 1, 3, 1)
+
+//-----Display-----//
+if barstate.islast
+    //-----QuantLens (Score Overview)-----//
+    // Corners
+    table.cell(tableScale, 0, 0, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 8, 0, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 0, 5, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 8, 5, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    // Vertical borders
+    table.cell(tableScale, 0, 1, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 8, 1, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    // Horizontal borders
+    table.cell(tableScale, 1, 0, text = '', bgcolor = BORDER_COLOR, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 1, 5, text = '', bgcolor = BORDER_COLOR, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+
+    // Title row
+    table.cell(tableScale, 1, 1, text = '⚜️ 𝐐𝐮𝐚𝐧𝐭𝐕𝐢𝐞𝐰 | 𝐐𝐮𝐚𝐧𝐭𝐂𝐨𝐫𝐞 ⚜️', text_color = color_text, bgcolor = BG_COLOR, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+
+    // Row 2: Day headers (Day3 | Day2 | Day1) | empty | (Day1 | Day2 | Day3)
+    table.cell(tableScale, 1, 2, text = str.tostring(dayOffset3), text_color = color_text, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_HALF, text_size = SMALL_TEXT_SIZE)
+    table.cell(tableScale, 2, 2, text = str.tostring(dayOffset2), text_color = color_text, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_HALF, text_size = SMALL_TEXT_SIZE)
+    table.cell(tableScale, 3, 2, text = str.tostring(dayOffset1), text_color = color_text, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_HALF, text_size = SMALL_TEXT_SIZE)
+    table.cell(tableScale, 4, 2, text = '', text_color = color_text, bgcolor = BG_COLOR, width = 6, height = COLUMN_HEIGHT_HALF, text_size = SMALL_TEXT_SIZE)
+    table.cell(tableScale, 5, 2, text = str.tostring(dayOffset1), text_color = color_text, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_HALF, text_size = SMALL_TEXT_SIZE)
+    table.cell(tableScale, 6, 2, text = str.tostring(dayOffset2), text_color = color_text, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_HALF, text_size = SMALL_TEXT_SIZE)
+    table.cell(tableScale, 7, 2, text = str.tostring(dayOffset3), text_color = color_text, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_HALF, text_size = SMALL_TEXT_SIZE)
+
+    // ROC color logic for all days
+    valRoc1Color = valScore_roc1 > 0 ? color.new(#00FF00, 50) : valScore_roc1 < 0 ? color.new(#FF0000, 50) : color_text
+    valRoc2Color = valScore_roc2 > 0 ? color.new(#00FF00, 50) : valScore_roc2 < 0 ? color.new(#FF0000, 50) : color_text
+    valRoc3Color = valScore_roc3 > 0 ? color.new(#00FF00, 50) : valScore_roc3 < 0 ? color.new(#FF0000, 50) : color_text
+    dexRoc1Color = dexScore_roc1 > 0 ? color.new(#00FF00, 50) : dexScore_roc1 < 0 ? color.new(#FF0000, 50) : color_text
+    dexRoc2Color = dexScore_roc2 > 0 ? color.new(#00FF00, 50) : dexScore_roc2 < 0 ? color.new(#FF0000, 50) : color_text
+    dexRoc3Color = dexScore_roc3 > 0 ? color.new(#00FF00, 50) : dexScore_roc3 < 0 ? color.new(#FF0000, 50) : color_text
+
+    // Row 3: Valuation scores (Day3 | Day2 | Day1) | Ticker | Trend scores (Day1 | Day2 | Day3)
+    table.cell(tableScale, 1, 3, text = str.tostring(valScore_day3, '#.##'), text_color = valuationColor(valScore_day3), bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 2, 3, text = str.tostring(valScore_day2, '#.##'), text_color = valuationColor(valScore_day2), bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 3, 3, text = str.tostring(valScore_day1, '#.##'), text_color = valuationColor(valScore_day1), bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 4, 3, text = syminfo.ticker, text_color = color_main, bgcolor = BG_COLOR, width = 6, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 5, 3, text = str.tostring(dexScore_day1, '#.###'), text_color = trendColor(dexScore_day1), bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 6, 3, text = str.tostring(dexScore_day2, '#.###'), text_color = trendColor(dexScore_day2), bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 7, 3, text = str.tostring(dexScore_day3, '#.###'), text_color = trendColor(dexScore_day3), bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+
+    // Row 4: ROC symbols (Day3 | Day2 | Day1) | Timeframe | ROC symbols (Day1 | Day2 | Day3)
+    valRoc1Sym = valScore_roc1 > 0 ? '▲' : valScore_roc1 < 0 ? '▼' : '➖'
+    valRoc2Sym = valScore_roc2 > 0 ? '▲' : valScore_roc2 < 0 ? '▼' : '➖'
+    valRoc3Sym = valScore_roc3 > 0 ? '▲' : valScore_roc3 < 0 ? '▼' : '➖'
+    dexRoc1Sym = dexScore_roc1 > 0 ? '▲' : dexScore_roc1 < 0 ? '▼' : '➖'
+    dexRoc2Sym = dexScore_roc2 > 0 ? '▲' : dexScore_roc2 < 0 ? '▼' : '➖'
+    dexRoc3Sym = dexScore_roc3 > 0 ? '▲' : dexScore_roc3 < 0 ? '▼' : '➖'
+    table.cell(tableScale, 1, 4, text = str.format('{0}{1}{0}', valRoc3Sym, str.tostring(math.abs(valScore_roc3), '#.##')), text_color = valRoc3Color, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 2, 4, text = str.format('{0}{1}{0}', valRoc2Sym, str.tostring(math.abs(valScore_roc2), '#.##')), text_color = valRoc2Color, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 3, 4, text = str.format('{0}{1}{0}', valRoc1Sym, str.tostring(math.abs(valScore_roc1), '#.##')), text_color = valRoc1Color, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 4, 4, text = timeframe.period, text_color = color_text, bgcolor = BG_COLOR, width = 6, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 5, 4, text = str.format('{0}{1}{0}', dexRoc1Sym, str.tostring(math.abs(dexScore_roc1), '#.###')), text_color = dexRoc1Color, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 6, 4, text = str.format('{0}{1}{0}', dexRoc2Sym, str.tostring(math.abs(dexScore_roc2), '#.###')), text_color = dexRoc2Color, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableScale, 7, 4, text = str.format('{0}{1}{0}', dexRoc3Sym, str.tostring(math.abs(dexScore_roc3), '#.###')), text_color = dexRoc3Color, bgcolor = BG_COLOR, width = 5, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+
+    //-----Fair Value Metrics-----//
+    table.cell(table_id = tableFairValue, column = 1, row = 1, text = '🔱 𝐐𝐮𝐚𝐧𝐭𝐌𝐞𝐭𝐫𝐢𝐜𝐬 🔱', text_color = color_text, bgcolor = BG_COLOR, width = TABLE_WIDTH_CENTER, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    //Corners
+    table.cell(tableFairValue, 0, 0, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableFairValue, 17, 0, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableFairValue, 0, 4, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableFairValue, 17, 4, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    //Vertical
+    table.cell(tableFairValue, 0, 1, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableFairValue, 17, 1, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    //Horizontal
+    table.cell(tableFairValue, 1, 0, text = '', bgcolor = BORDER_COLOR, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableFairValue, 1, 4, text = '', bgcolor = BORDER_COLOR, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    //OSSR Ratios (normalize to -1 to 1 for trendColor)
+    sharpeNorm = math.max(-1, math.min(1, sharpeRatio / 3))
+    sortinoNorm = math.max(-1, math.min(1, sortinoRatio / 3))
+    omegaNorm = math.max(-1, math.min(1, (omegaRatio - 1)))
+    table.cell(tableFairValue, 1, 2, text = str.format('𝐒𝐡𝐚𝐫𝐩𝐞: {0}', str.tostring(sharpeRatio, '#.##')), text_color = trendColor(sharpeNorm), width = COLUMN_WIDTH_1, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableFairValue, 6, 2, text = str.format('𝐒𝐨𝐫𝐭𝐢𝐧𝐨: {0}', str.tostring(sortinoRatio, '#.##')), text_color = trendColor(sortinoNorm), width = COLUMN_WIDTH_1 * 1.25, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableFairValue, 12, 2, text = str.format('𝐎𝐦𝐞𝐠𝐚: {0}', str.tostring(omegaRatio, '#.##')), text_color = trendColor(omegaNorm), width = COLUMN_WIDTH_1, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    //EMA System Info
+    emaTrendNorm = EMA_UpTrend ? 1 : -1
+    table.cell(tableFairValue, 1, 3, text = str.format('𝐄𝐌𝐀: {0}', emaTrendState), text_color = trendColor(emaTrendNorm), width = COLUMN_WIDTH_4, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableFairValue, 9, 3, text = str.format('𝐒𝐩𝐫𝐞𝐚𝐝: {0}%', str.tostring(emaSpread, '#.##')), text_color = color_text, width = COLUMN_WIDTH_4, height = COLUMN_HEIGHT_1, text_size = TITLE_TEXT_SIZE)
+
+    //-----Indicators-----//
+    table.cell(table_id = tableIndicator, column = 1, row = 1, text = '⚡ 𝐐𝐮𝐚𝐧𝐭𝐃𝐄𝐗 ⚡', text_color = color_text, bgcolor = BG_COLOR, width = TABLE_WIDTH_SIDE, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    //Corners
+    table.cell(tableIndicator, 0, 0, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 4, 0, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 0, 24, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 4, 24, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    //Vertical
+    table.cell(tableIndicator, 0, 1, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 4, 1, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    //Horizontal
+    table.cell(tableIndicator, 1, 0, text = '', bgcolor = BORDER_COLOR, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 24, text = '', bgcolor = BORDER_COLOR, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+
+    // Indicator Names
+    table.cell(tableIndicator, 1, 2, text = '𝐈𝐧𝐝𝐢𝐜𝐚𝐭𝐨𝐫', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 3, text = '𝕐-𝟘𝟘𝟙', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 4, text = '𝕐-𝟘𝟘𝟚', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 5, text = '𝕐-𝟘𝟘𝟛', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 6, text = '𝕐-𝟘𝟘𝟜', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 7, text = '𝕐-𝟘𝟘𝟝', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 8, text = '𝕐-𝟘𝟘𝟞', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 9, text = '𝕐-𝟘𝟘𝟟', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 10, text = '𝕐-𝟘𝟘𝟠', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 11, text = '𝕐-𝟘𝟘𝟡', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 12, text = '𝕐-𝟘𝟙𝟘', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 13, text = '𝕐-𝟘𝟙𝟙', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 14, text = '𝕐-𝟘𝟙𝟚', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 15, text = '𝕐-𝟘𝟙𝟛', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 16, text = '𝕐-𝟘𝟙𝟜', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 17, text = '𝕐-𝟘𝟙𝟝', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 18, text = '𝕐-𝟘𝟙𝟞', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 19, text = '𝕐-𝟘𝟙𝟟', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 20, text = '𝕐-𝟘𝟙𝟠', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 21, text = '𝕐-𝟘𝟙𝟡', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 1, 22, text = '𝕐-𝟘𝟚𝟘', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    // Indicator Scores Medium Term
+    table.cell(tableIndicator, 2, 2, text = '𝐒𝐡𝐨𝐫𝐭-𝐓𝐞𝐫𝐦', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 2, 3, text = dexScore_01_s > 0 ? '▲' : dexScore_01_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_01_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 4, text = dexScore_02_s > 0 ? '▲' : dexScore_02_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_02_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 5, text = dexScore_03_s > 0 ? '▲' : dexScore_03_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_03_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 6, text = dexScore_04_s > 0 ? '▲' : dexScore_04_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_04_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 7, text = dexScore_05_s > 0 ? '▲' : dexScore_05_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_05_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 8, text = dexScore_06_s > 0 ? '▲' : dexScore_06_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_06_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 9, text = dexScore_07_s > 0 ? '▲' : dexScore_07_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_07_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 10, text = dexScore_08_s > 0 ? '▲' : dexScore_08_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_08_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 11, text = dexScore_09_s > 0 ? '▲' : dexScore_09_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_09_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 12, text = dexScore_10_s > 0 ? '▲' : dexScore_10_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_10_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 13, text = dexScore_11_s > 0 ? '▲' : dexScore_11_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_11_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 14, text = dexScore_12_s > 0 ? '▲' : dexScore_12_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_12_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 15, text = dexScore_13_s > 0 ? '▲' : dexScore_13_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_13_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 16, text = dexScore_14_s > 0 ? '▲' : dexScore_14_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_14_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 17, text = dexScore_15_s > 0 ? '▲' : dexScore_15_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_15_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 18, text = dexScore_16_s > 0 ? '▲' : dexScore_16_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_16_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 19, text = dexScore_17_s > 0 ? '▲' : dexScore_17_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_17_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 20, text = dexScore_18_s > 0 ? '▲' : dexScore_18_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_18_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 21, text = dexScore_19_s > 0 ? '▲' : dexScore_19_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_19_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 2, 22, text = dexScore_20_s > 0 ? '▲' : dexScore_20_s < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_20_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    // Indicator Scores Long Term
+    table.cell(tableIndicator, 3, 2, text = '𝐋𝐨𝐧𝐠-𝐓𝐞𝐫𝐦', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 3, 3, text = dexScore_01_l > 0 ? '▲' : dexScore_01_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_01_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 4, text = dexScore_02_l > 0 ? '▲' : dexScore_02_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_02_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 5, text = dexScore_03_l > 0 ? '▲' : dexScore_03_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_03_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 6, text = dexScore_04_l > 0 ? '▲' : dexScore_04_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_04_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 7, text = dexScore_05_l > 0 ? '▲' : dexScore_05_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_05_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 8, text = dexScore_06_l > 0 ? '▲' : dexScore_06_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_06_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 9, text = dexScore_07_l > 0 ? '▲' : dexScore_07_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_07_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 10, text = dexScore_08_l > 0 ? '▲' : dexScore_08_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_08_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 11, text = dexScore_09_l > 0 ? '▲' : dexScore_09_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_09_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 12, text = dexScore_10_l > 0 ? '▲' : dexScore_10_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_10_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 13, text = dexScore_11_l > 0 ? '▲' : dexScore_11_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_11_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 14, text = dexScore_12_l > 0 ? '▲' : dexScore_12_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_12_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 15, text = dexScore_13_l > 0 ? '▲' : dexScore_13_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_13_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 16, text = dexScore_14_l > 0 ? '▲' : dexScore_14_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_14_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 17, text = dexScore_15_l > 0 ? '▲' : dexScore_15_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_15_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 18, text = dexScore_16_l > 0 ? '▲' : dexScore_16_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_16_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 19, text = dexScore_17_l > 0 ? '▲' : dexScore_17_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_17_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 20, text = dexScore_18_l > 0 ? '▲' : dexScore_18_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_18_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 21, text = dexScore_19_l > 0 ? '▲' : dexScore_19_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_19_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableIndicator, 3, 22, text = dexScore_20_l > 0 ? '▲' : dexScore_20_l < 0 ? '▼' : '➖', text_size = TITLE_TEXT_SIZE, text_color = trendColor(dexScore_20_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    // Trend Score
+    table.cell(tableIndicator, 1, 23, text = '𝐒𝐜𝐨𝐫𝐞', text_color = color_text, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 2, 23, text = str.tostring(dexScore_s), text_color = trendColor(dexScore_s), height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableIndicator, 3, 23, text = str.tostring(dexScore_l), text_color = trendColor(dexScore_l), height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+
+    table.cell(table_id = tableValuation, column = 1, row = 1, text = '⚡ 𝐐𝐮𝐚𝐧𝐭𝐕𝐀𝐋 ⚡', text_color = color_text, bgcolor = BG_COLOR, width = TABLE_WIDTH_SIDE, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    //Corners
+    table.cell(tableValuation, 0, 0, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 4, 0, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 0, 24, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 4, 24, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    //Vertical
+    table.cell(tableValuation, 0, 1, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 4, 1, text = '', bgcolor = BORDER_COLOR, width = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    //Horizontal
+    table.cell(tableValuation, 1, 0, text = '', bgcolor = BORDER_COLOR, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 24, text = '', bgcolor = BORDER_COLOR, height = TABLE_SMALL_BORDER, text_size = TITLE_TEXT_SIZE)
+
+    // Indicator Names
+    table.cell(tableValuation, 1, 2, text = '𝐈𝐧𝐝𝐢𝐜𝐚𝐭𝐨𝐫', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 3, text = '𝕏-𝟘𝟘𝟙', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 4, text = '𝕏-𝟘𝟘𝟚', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 5, text = '𝕏-𝟘𝟘𝟛', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 6, text = '𝕏-𝟘𝟘𝟜', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 7, text = '𝕏-𝟘𝟘𝟝', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 8, text = '𝕏-𝟘𝟘𝟞', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 9, text = '𝕏-𝟘𝟘𝟟', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 10, text = '𝕏-𝟘𝟘𝟠', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 11, text = '𝕏-𝟘𝟘𝟡', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 12, text = '𝕏-𝟘𝟙𝟘', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 13, text = '𝕏-𝟘𝟙𝟙', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 14, text = '𝕏-𝟘𝟙𝟚', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 15, text = '𝕏-𝟘𝟙𝟛', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 16, text = '𝕏-𝟘𝟙𝟜', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 17, text = '𝕏-𝟘𝟙𝟝', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 18, text = '𝕏-𝟘𝟙𝟞', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 19, text = '𝕏-𝟘𝟙𝟟', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 20, text = '𝕏-𝟘𝟙𝟠', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 21, text = '𝕏-𝟘𝟙𝟡', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 1, 22, text = '𝕏-𝟘𝟚𝟘', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    // valuation Scores Short Term (Z-Scores)
+    table.cell(tableValuation, 2, 2, text = '𝐒𝐡𝐨𝐫𝐭-𝐓𝐞𝐫𝐦', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 2, 3, text = str.tostring(math.round(valScore_01_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_01_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 4, text = str.tostring(math.round(valScore_02_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_02_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 5, text = str.tostring(math.round(valScore_03_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_03_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 6, text = str.tostring(math.round(valScore_04_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_04_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 7, text = str.tostring(math.round(valScore_05_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_05_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 8, text = str.tostring(math.round(valScore_06_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_06_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 9, text = str.tostring(math.round(valScore_07_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_07_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 10, text = str.tostring(math.round(valScore_08_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_08_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 11, text = str.tostring(math.round(valScore_09_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_09_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 12, text = str.tostring(math.round(valScore_10_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_10_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 13, text = str.tostring(math.round(valScore_11_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_11_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 14, text = str.tostring(math.round(valScore_12_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_12_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 15, text = str.tostring(math.round(valScore_13_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_13_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 16, text = str.tostring(math.round(valScore_14_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_14_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 17, text = str.tostring(math.round(valScore_15_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_15_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 18, text = str.tostring(math.round(valScore_16_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_16_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 19, text = str.tostring(math.round(valScore_17_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_17_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 20, text = str.tostring(math.round(valScore_18_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_18_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 21, text = str.tostring(math.round(valScore_19_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_19_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 2, 22, text = str.tostring(math.round(valScore_20_s, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_20_s), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    // valuation Scores Long Term (Z-Scores)
+    table.cell(tableValuation, 3, 2, text = '𝐋𝐨𝐧𝐠-𝐓𝐞𝐫𝐦', text_color = color_text, width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 3, 3, text = str.tostring(math.round(valScore_01_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_01_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 4, text = str.tostring(math.round(valScore_02_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_02_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 5, text = str.tostring(math.round(valScore_03_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_03_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 6, text = str.tostring(math.round(valScore_04_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_04_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 7, text = str.tostring(math.round(valScore_05_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_05_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 8, text = str.tostring(math.round(valScore_06_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_06_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 9, text = str.tostring(math.round(valScore_07_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_07_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 10, text = str.tostring(math.round(valScore_08_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_08_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 11, text = str.tostring(math.round(valScore_09_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_09_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 12, text = str.tostring(math.round(valScore_10_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_10_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 13, text = str.tostring(math.round(valScore_11_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_11_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 14, text = str.tostring(math.round(valScore_12_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_12_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 15, text = str.tostring(math.round(valScore_13_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_13_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 16, text = str.tostring(math.round(valScore_14_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_14_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 17, text = str.tostring(math.round(valScore_15_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_15_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 18, text = str.tostring(math.round(valScore_16_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_16_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 19, text = str.tostring(math.round(valScore_17_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_17_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 20, text = str.tostring(math.round(valScore_18_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_18_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 21, text = str.tostring(math.round(valScore_19_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_19_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    table.cell(tableValuation, 3, 22, text = str.tostring(math.round(valScore_20_l, 2)), text_size = TITLE_TEXT_SIZE, text_color = valuationColor(valScore_20_l), width = COLUMN_WIDTH_2, height = COLUMN_HEIGHT_SIDE)
+    // Z-Score Average
+    table.cell(tableValuation, 1, 23, text = '𝐒𝐜𝐨𝐫𝐞', text_color = color_text, height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 2, 23, text = str.tostring(valScore_s), text_color = valuationColor(valScore_s), height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+    table.cell(tableValuation, 3, 23, text = str.tostring(valScore_l), text_color = valuationColor(valScore_l), height = COLUMN_HEIGHT_SIDE, text_size = TITLE_TEXT_SIZE)
+
+plot(dexScore_s, 'DEX Short-Term', color = trendColor(dexScore_s), display = display.status_line)
+plot(dexScore_l, 'DEX Long-Term', color = trendColor(dexScore_l), display = display.status_line)
+plot(valScore_s, 'VAL Short-Term', color = valuationColor(valScore_s), display = display.status_line)
+plot(valScore_l, 'VAL Long-Term', color = valuationColor(valScore_l), display = display.status_line)
+plot(ta.roc(close, 1), 'Close % Change', color = color_text, display = display.status_line)
+
+//-----EMA System Plots-----//
+plot(enableEmaBands ? emaS : na, color = emaTrendColor, title = 'EMA Fast', style = plot.style_line, linestyle = plot.linestyle_dotted , linewidth = 2, format = format.volume, display = display.pane)
+plot(enableEmaBands ? emaB : na, color = emaTrendColor, title = 'EMA Slow', style = plot.style_line, linestyle = plot.linestyle_dotted , linewidth = 2, format = format.volume, display = display.pane)
+// Independent EMAs with price-based coloring
+plot(enableEmaBands ? ema50 : na, color = close >= ema50 ? emaUpTrendColor : emaDownTrendColor, title = 'EMA 50', style = plot.style_line, linewidth = 2, format = format.volume, display = display.pane)
+plot(enableEmaBands ? ema100 : na, color = close >= ema100 ? emaUpTrendColor : emaDownTrendColor, title = 'EMA 100', style = plot.style_line, linewidth = 3, format = format.volume, display = display.pane)
+plot(enableEmaBands ? ema200 : na, color = close >= ema200 ? emaUpTrendColor : emaDownTrendColor, title = 'EMA 200', style = plot.style_line, linewidth = 4, format = format.volume, display = display.pane)
+bgcolor(enableEmaBgColor ? emaBgColor : na, title = 'EMA Background')
+
+//-----Plot Candles-----//
+// Use bull/bear colors from the library based on dexScore_s
+trend_color = dexScore_s > 0 ? CLR.bullColor(colorTheme) : dexScore_s < 0 ? CLR.bearColor(colorTheme) : CLR.bullColor(colorTheme, 50)
+
+// Heikin Ashi [Improved] Calculations
+close0 = (open + high + low + close) / 4
+close0 := na(close0) ? nz(na) : (nz(close0) + nz(close)) / 2
+open0 = float(na)
+open0 := na(open0[1]) ? nz(na) : (nz(open0[ha_smoothness]) + nz(close0[1])) / 2
+high0 = math.max(high, math.max(open0, close0))
+low0 = math.min(low, math.min(open0, close0))
+h0 = math.max(high0, low0)
+l0 = math.min(high0, low0)
+
+// Original Heikin Ashi Smoothness (extra layer)
+haClose = (open0 + h0 + l0 + close0) / 4
+haOpen = float(na)
+haOpen := na(haOpen[1]) ? (open0 + close0) / 2 : (nz(haOpen[1]) + nz(haClose[1])) / 2
+haHigh = math.max(h0, math.max(haOpen, haClose))
+haLow = math.min(l0, math.min(haOpen, haClose))
+
+// Determine which OHLC values to use based on candle type and smoothness option
+use_ha = candle_type != 'Normal OHLC'
+use_real_close = candle_type == 'Heikin Ashi (Real Close)'
+
+plot_open = use_ha ? (ha_extra_smooth ? haOpen : open0) : open
+plot_high = use_ha ? (ha_extra_smooth ? haHigh : h0) : high
+plot_low = use_ha ? (ha_extra_smooth ? haLow : l0) : low
+plot_close = use_ha ? (use_real_close ? close : (ha_extra_smooth ? haClose : close0)) : close
+
+plotcandle(plot_open, plot_high, plot_low, plot_close, color = trend_color, bordercolor = trend_color, wickcolor = trend_color, display = display.pane, format = format.price, precision = 2)
+
+//-----Background Color based on Z-Score-----//
+bgcolor(bgValuationColor(valScore_s), title = 'Z-Score Background')
+
+//-----Z-Score Border Lines-----//
+// Draw markers at screen edges for overbought/oversold zones
+isOversold = valScore_s <= -zScoreThreshold
+isOverbought = valScore_s >= zScoreThreshold
+useGlowStyle = borderLineStyle == 'Glow'
+
+// Extract base colors without transparency for glow layers
+colorOverboughtBase = color.rgb(color.r(colorOverbought), color.g(colorOverbought), color.b(colorOverbought))
+colorOversoldBase = color.rgb(color.r(colorOversold), color.g(colorOversold), color.b(colorOversold))
+
+// Calculate positions based on each candle's own high/low (for Glow mode)
+topPos = high * 1.01
+bottomPos = low * 0.99
+
+// Glow mode values
+overboughtGlowVal = enableZScoreBorderLines and useGlowStyle and isOverbought ? topPos : na
+oversoldGlowVal = enableZScoreBorderLines and useGlowStyle and isOversold ? bottomPos : na
+
+// Overbought glow layers - circles at same position, different linewidths (outer to core)
+plot(overboughtGlowVal, style = plot.style_circles, color = color.new(colorOverboughtBase, 85), linewidth = 5, title = 'Overbought Glow 1', display = display.pane)
+plot(overboughtGlowVal, style = plot.style_circles, color = color.new(colorOverboughtBase, 70), linewidth = 4, title = 'Overbought Glow 2', display = display.pane)
+plot(overboughtGlowVal, style = plot.style_circles, color = color.new(colorOverboughtBase, 50), linewidth = 3, title = 'Overbought Glow 3', display = display.pane)
+plot(overboughtGlowVal, style = plot.style_circles, color = color.new(colorOverboughtBase, 25), linewidth = 2, title = 'Overbought Glow 4', display = display.pane)
+plot(overboughtGlowVal, style = plot.style_circles, color = color.new(colorOverboughtBase, 0), linewidth = 1, title = 'Overbought Core', display = display.pane)
+
+// Oversold glow layers - circles at same position, different linewidths (outer to core)
+plot(oversoldGlowVal, style = plot.style_circles, color = color.new(colorOversoldBase, 85), linewidth = 5, title = 'Oversold Glow 1', display = display.pane)
+plot(oversoldGlowVal, style = plot.style_circles, color = color.new(colorOversoldBase, 70), linewidth = 4, title = 'Oversold Glow 2', display = display.pane)
+plot(oversoldGlowVal, style = plot.style_circles, color = color.new(colorOversoldBase, 50), linewidth = 3, title = 'Oversold Glow 3', display = display.pane)
+plot(oversoldGlowVal, style = plot.style_circles, color = color.new(colorOversoldBase, 25), linewidth = 2, title = 'Oversold Glow 4', display = display.pane)
+plot(oversoldGlowVal, style = plot.style_circles, color = color.new(colorOversoldBase, 0), linewidth = 1, title = 'Oversold Core', display = display.pane)
+
+// Simple mode - plotshape at screen top/bottom edges
+plotshape(enableZScoreBorderLines and not useGlowStyle and isOverbought, style = shape.circle, location = location.top, color = colorOverbought, size = size.tiny, title = 'Overbought Simple', display = display.pane)
+plotshape(enableZScoreBorderLines and not useGlowStyle and isOversold, style = shape.circle, location = location.bottom, color = colorOversold, size = size.tiny, title = 'Oversold Simple', display = display.pane)
+
+//====================================================================================================================//
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Changelog:                                                                                                         //
+//                                                                                                                    //
+//                                                                                                                    //
+//                                                                                                                    //
+//                                                                                                                    //
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//====================================================================================================================//
