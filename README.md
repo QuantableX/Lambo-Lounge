@@ -2,6 +2,8 @@
 
 A collection of trading tools, scripts, and TradingView Pine Script resources for and from Lambo Lounge.
 
+For other tools and scripts, check out the google drive folder, which can be found in the resource channel.
+
 ## 📁 Project Structure
 
 ```
