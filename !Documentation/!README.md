@@ -8,14 +8,11 @@ For other tools and scripts, check out the google drive folder, which can be fou
 
 ```
 Lambo Lounge/
-├── !Documentation/       # Project documentation and guides
-├── Tools - Scripts and Software/  # Utility scripts and software tools
-└── Tradingview - Pinescript/      # TradingView Pine Script collection
-    ├── !example/         # Example scripts and templates
-    ├── !reference/       # Reference materials
-    ├── 1. libraries/     # Reusable Pine Script libraries
-    ├── 2. indicators/    # Custom trading indicators
-    └── 3. strategies/    # Automated trading strategies
+├── !Documentation/              # Project documentation and guides
+└── Tradingview - Pinescript/    # TradingView Pine Script collection
+    ├── 1. libraries/            # Reusable Pine Script libraries
+    ├── 2. indicators/           # Custom trading indicators
+    └── 3. strategies/           # Automated trading strategies
 ```
 
 ## Folders
