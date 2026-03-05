@@ -1,0 +1,783 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © TheTradingSpiderMan
+
+//@version=6
+indicator('⚜️ 𝐐𝐮𝐚𝐧𝐭𝐖𝐲𝐜𝐤𝐨𝐟𝐟 ⚜️', overlay = true, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500)
+
+import TheTradingSpiderMan/ColorsLibrary/2 as CLR
+
+// ============================== SETTINGS ==============================
+
+GROUP_DETECT  = '⚜️ 𝐃𝐞𝐭𝐞𝐜𝐭𝐢𝐨𝐧 ⚜️'
+GROUP_SENS    = '⚜️ 𝐒𝐞𝐧𝐬𝐢𝐭𝐢𝐯𝐢𝐭𝐲 ⚜️'
+GROUP_VISUAL  = '⚜️ 𝐕𝐢𝐬𝐮𝐚𝐥 ⚜️'
+GROUP_COLORS  = '⚜️ 𝐂𝐨𝐥𝐨𝐫𝐬 ⚜️'
+
+// Detection
+i_volLen       = input.int(20, 'Volume MA Length', minval = 5, maxval = 100, group = GROUP_DETECT, tooltip = 'Lookback for average volume calculation')
+i_pivotLen     = input.int(7, 'Pivot Lookback', minval = 2, maxval = 30, group = GROUP_DETECT, tooltip = 'Bars left/right for pivot detection — lower = more sensitive')
+i_spreadLen    = input.int(20, 'Spread MA Length', minval = 5, maxval = 100, group = GROUP_DETECT, tooltip = 'Lookback for average bar spread')
+i_trendLen     = input.int(50, 'Trend Lookback', minval = 20, maxval = 200, group = GROUP_DETECT, tooltip = 'Lookback for trend and extreme detection')
+i_rangeTol     = input.float(3.0, 'Range Tolerance %', minval = 0.5, maxval = 15.0, step = 0.5, group = GROUP_DETECT, tooltip = 'How close price must be to key levels')
+i_resetBars    = input.int(300, 'Pattern Reset (bars)', minval = 50, maxval = 1000, group = GROUP_DETECT, tooltip = 'Reset detection if no new events within this many bars')
+i_trendEmaLen  = input.int(50, 'Trend EMA Length', minval = 10, maxval = 200, group = GROUP_DETECT, tooltip = 'EMA for trend direction detection')
+
+// Sensitivity
+i_climaxMult   = input.float(1.8, 'Climactic Vol Multiplier', minval = 1.2, maxval = 5.0, step = 0.1, group = GROUP_SENS, tooltip = 'Volume factor for climax events (SC/BC). Lower = more sensitive')
+i_highVolMult  = input.float(1.3, 'High Vol Multiplier', minval = 1.0, maxval = 3.0, step = 0.1, group = GROUP_SENS, tooltip = 'Volume factor for SOS/SOW events')
+i_lowVolMult   = input.float(0.75, 'Low Vol Multiplier', minval = 0.3, maxval = 1.0, step = 0.05, group = GROUP_SENS, tooltip = 'Max volume factor for Spring/Test (supply exhaustion)')
+i_wideMult     = input.float(1.2, 'Wide Spread Multiplier', minval = 1.0, maxval = 3.0, step = 0.1, group = GROUP_SENS, tooltip = 'Bar spread factor for wide-range bars')
+i_narrowMult   = input.float(0.8, 'Narrow Spread Multiplier', minval = 0.3, maxval = 1.0, step = 0.05, group = GROUP_SENS, tooltip = 'Bar spread factor for narrow-range bars')
+i_stVolRatio   = input.float(0.85, 'ST Volume Ratio', minval = 0.5, maxval = 1.2, step = 0.05, group = GROUP_SENS, tooltip = 'ST volume must be below this fraction of climax volume')
+i_stSpreadRatio = input.float(0.95, 'ST Spread Ratio', minval = 0.5, maxval = 1.5, step = 0.05, group = GROUP_SENS, tooltip = 'ST spread must be below this fraction of climax spread')
+
+// Visual
+i_showLabels   = input.bool(true, 'Show Event Labels', group = GROUP_VISUAL)
+i_showBox      = input.bool(true, 'Show Trading Range', group = GROUP_VISUAL)
+i_showTable    = input.bool(true, 'Show Info Table', group = GROUP_VISUAL)
+i_showRangeLines = input.bool(true, 'Show Support/Resistance Lines', group = GROUP_VISUAL)
+i_tablePos     = input.string('Top Right', 'Table Position', options = ['Top Left', 'Top Right', 'Bottom Left', 'Bottom Right'], group = GROUP_VISUAL)
+i_labelSize    = input.string('Normal', 'Label Size', options = ['Tiny', 'Small', 'Normal'], group = GROUP_VISUAL)
+
+// Colors
+colorTheme     = input.string('DEFAULT', 'Color Theme', options = ['DEFAULT', 'MONO', 'VAPOR', 'NEON', 'OCEAN', 'SUNSET', 'FOREST', 'CANDY', 'FIRE', 'ICE'], group = GROUP_COLORS)
+bullCol        = CLR.bullColor(colorTheme)
+bearCol        = CLR.bearColor(colorTheme)
+
+// ============================== TIMEFRAME ADAPTATION ==============================
+
+tfSec     = timeframe.in_seconds()
+isHTF     = tfSec >= 14400
+tfScale   = tfSec >= 86400 ? 1.8 : tfSec >= 14400 ? 1.4 : tfSec >= 3600 ? 1.15 : 1.0
+
+// Scaled parameters
+aRangeTol  = i_rangeTol * tfScale
+aResetBars = math.round(i_resetBars * tfScale)
+
+// Adaptive bar windows for event sequencing
+winAR      = math.round(60 * tfScale)
+winSTSkip  = math.round(25 * tfScale)
+winTest    = math.round(40 * tfScale)
+winLPS     = math.round(55 * tfScale)
+
+// ============================== FOUNDATION ==============================
+
+// Label size helper
+lblSize = i_labelSize == 'Tiny' ? size.tiny : i_labelSize == 'Small' ? size.small : size.normal
+
+// Volume
+volMA          = ta.sma(volume, i_volLen)
+isClimaxVol    = volume >= volMA * i_climaxMult
+isHighVol      = volume >= volMA * i_highVolMult
+isLowVol       = volume <= volMA * i_lowVolMult
+volRatio       = volMA > 0 ? volume / volMA : 1.0
+isPeakVol      = volume >= ta.highest(volume, i_volLen)
+
+// Spread
+spread         = high - low
+avgSpread      = ta.sma(spread, i_spreadLen)
+isWideSpread   = spread >= avgSpread * i_wideMult
+isNarrowSpread = spread <= avgSpread * i_narrowMult
+spreadRatio    = avgSpread > 0 ? spread / avgSpread : 1.0
+
+// Close position within bar (0.0 = at low, 1.0 = at high)
+closePos       = spread > 0 ? (close - low) / spread : 0.5
+isStrongClose  = closePos >= 0.6
+isWeakClose    = closePos <= 0.4
+
+// Trend detection (percentage-based slope — stable across assets and timeframes)
+trendEMA       = ta.ema(close, i_trendEmaLen)
+trendSlope     = trendEMA - trendEMA[10]
+trendSlopePct  = nz(trendEMA[10]) > 0 ? (trendEMA - trendEMA[10]) / trendEMA[10] * 100 : 0.0
+slopeThresh    = isHTF ? 0.4 : 0.25
+isDowntrend    = trendSlopePct < -slopeThresh or (trendSlopePct < 0 and close < trendEMA)
+isUptrend      = trendSlopePct > slopeThresh or (trendSlopePct > 0 and close > trendEMA)
+
+// Relaxed momentum checks (not strict consecutive falling/rising)
+isFalling      = close < close[3] and close < close[5]
+isRising       = close > close[3] and close > close[5]
+
+// Medium-term momentum
+mom20          = close - close[20]
+isBearMom      = mom20 < 0
+isBullMom      = mom20 > 0
+
+// Pivots
+pivHigh        = ta.pivothigh(high, i_pivotLen, i_pivotLen)
+pivLow         = ta.pivotlow(low, i_pivotLen, i_pivotLen)
+
+// ATR
+atr            = ta.atr(14)
+
+// Price extremes — use adapted lookback on HTF for wider context
+effTrendLen    = math.max(i_trendLen, math.round(i_trendLen * tfScale))
+lowestLow      = ta.lowest(low, effTrendLen)
+highestHigh    = ta.highest(high, effTrendLen)
+
+// Dual near-level detection: percentage-based OR ATR-based (whichever catches more)
+nearLowsPct    = low <= lowestLow * (1 + aRangeTol / 100)
+nearLowsATR    = low <= lowestLow + atr * 2.5
+nearLows       = nearLowsPct or nearLowsATR
+
+nearHighsPct   = high >= highestHigh * (1 - aRangeTol / 100)
+nearHighsATR   = high >= highestHigh - atr * 2.5
+nearHighs      = nearHighsPct or nearHighsATR
+
+// Effort vs Result
+effortResult   = spread > 0 and volMA > 0 ? (volume / volMA) / (spread / avgSpread) : 1.0
+
+// ============================== STATE ==============================
+
+// Mode: 0 = Scanning, 1 = Accumulation, 2 = Distribution
+var int   mode          = 0
+var int   phase         = 0   // 0=None, 1=A, 2=B, 3=C, 4=D, 5=E
+
+// Accumulation events
+var bool  ev_sc         = false
+var bool  ev_ar_a       = false
+var bool  ev_st_a       = false
+var bool  ev_spring     = false
+var bool  ev_test       = false
+var bool  ev_sos        = false
+var bool  ev_lps        = false
+
+// Distribution events
+var bool  ev_bc         = false
+var bool  ev_ar_d       = false
+var bool  ev_st_d       = false
+var bool  ev_utad       = false
+var bool  ev_sow        = false
+var bool  ev_lpsy       = false
+
+// Key levels
+var float rangeHigh     = na
+var float rangeLow      = na
+var int   rangeStart    = na
+var float climaxVol     = na
+var float climaxSpread  = na
+var int   lastEvtBar    = na
+var float springLow     = na
+
+// Quality scores (0-100 per event)
+var float q_sc    = 0.0
+var float q_ar_a  = 0.0
+var float q_st_a  = 0.0
+var float q_spr   = 0.0
+var float q_tst   = 0.0
+var float q_sos   = 0.0
+var float q_lps   = 0.0
+var float q_bc    = 0.0
+var float q_ar_d  = 0.0
+var float q_st_d  = 0.0
+var float q_utad  = 0.0
+var float q_sow   = 0.0
+var float q_lpsy  = 0.0
+
+// Range visuals
+var box   rangeBox      = na
+var line  supportLine   = na
+var line  resistLine    = na
+
+// ============================== RESET ==============================
+
+if mode != 0 and bar_index - nz(rangeStart, bar_index) > aResetBars
+    mode          := 0
+    phase         := 0
+    ev_sc         := false
+    ev_ar_a       := false
+    ev_st_a       := false
+    ev_spring     := false
+    ev_test       := false
+    ev_sos        := false
+    ev_lps        := false
+    ev_bc         := false
+    ev_ar_d       := false
+    ev_st_d       := false
+    ev_utad       := false
+    ev_sow        := false
+    ev_lpsy       := false
+    rangeHigh     := na
+    rangeLow      := na
+    rangeStart    := na
+    climaxVol     := na
+    climaxSpread  := na
+    lastEvtBar    := na
+    springLow     := na
+    q_sc          := 0.0
+    q_ar_a        := 0.0
+    q_st_a        := 0.0
+    q_spr         := 0.0
+    q_tst         := 0.0
+    q_sos         := 0.0
+    q_lps         := 0.0
+    q_bc          := 0.0
+    q_ar_d        := 0.0
+    q_st_d        := 0.0
+    q_utad        := 0.0
+    q_sow         := 0.0
+    q_lpsy        := 0.0
+
+// ============================== ACCUMULATION DETECTION ==============================
+
+barsSince() => bar_index - nz(lastEvtBar, 0)
+
+// --- Selling Climax (SC) ---
+// High volume bar near lows, bearish context, NOT in uptrend
+// On HTF: accept isPeakVol + wide spread as alternative, relax close condition
+det_sc = mode == 0
+     and not isUptrend
+     and (isClimaxVol or (isHighVol and isWideSpread) or (isPeakVol and isWideSpread))
+     and nearLows
+     and (close < open or closePos <= 0.5 or (isHTF and closePos <= 0.6))
+     and (isDowntrend or isFalling or close < close[5] or close < close[10] or isBearMom)
+
+if det_sc
+    mode         := 1
+    phase        := 1
+    ev_sc        := true
+    rangeLow     := low
+    rangeStart   := bar_index
+    climaxVol    := volume
+    climaxSpread := spread
+    lastEvtBar   := bar_index
+    q_sc := math.min(
+         (volRatio >= 2.5 ? 30.0 : volRatio >= 2.0 ? 25.0 : volRatio >= 1.5 ? 18.0 : 10.0) +
+         (spreadRatio >= 1.8 ? 25.0 : spreadRatio >= 1.3 ? 18.0 : 10.0) +
+         (closePos >= 0.5 ? 25.0 : closePos >= 0.3 ? 15.0 : 8.0) +
+         (low <= lowestLow ? 20.0 : low <= lowestLow * 1.01 ? 15.0 : 8.0), 100.0)
+
+// --- SC Update: if we get a deeper low with strong volume before AR, update SC ---
+if mode == 1 and ev_sc and not ev_ar_a and low < rangeLow and volume >= climaxVol * 0.8
+    rangeLow     := low
+    climaxVol    := math.max(climaxVol, volume)
+    climaxSpread := math.max(climaxSpread, spread)
+    lastEvtBar   := bar_index
+
+// --- Automatic Rally (AR) – Accumulation ---
+// First significant pivot high after SC — the bounce
+det_ar_a = mode == 1 and ev_sc and not ev_ar_a
+     and not na(pivHigh)
+     and barsSince() >= 2 and barsSince() <= winAR
+
+if det_ar_a
+    ev_ar_a      := true
+    rangeHigh    := pivHigh
+    lastEvtBar   := bar_index - i_pivotLen
+    rallySizeP   = nz(rangeLow) > 0 ? (pivHigh - rangeLow) / rangeLow * 100 : 0.0
+    pvVol        = volume[i_pivotLen]
+    pvVolMA      = volMA[i_pivotLen]
+    q_ar_a := math.min(
+         (pvVol > pvVolMA ? 35.0 : 20.0) +
+         (close[i_pivotLen] > open[i_pivotLen] ? 25.0 : 12.0) +
+         (rallySizeP > 5 ? 40.0 : rallySizeP > 2 ? 30.0 : 15.0), 100.0)
+
+// --- Secondary Test (ST) – Accumulation ---
+// Pivot low near SC level — requires EITHER diminished volume OR diminished spread (relaxed from AND)
+det_st_a = mode == 1 and ev_ar_a and not ev_st_a
+     and not na(pivLow)
+     and pivLow >= rangeLow * (1 - aRangeTol / 100)
+     and pivLow <= rangeLow * (1 + aRangeTol * 1.5 / 100)
+     and (volume[i_pivotLen] < climaxVol * i_stVolRatio
+          or (high[i_pivotLen] - low[i_pivotLen]) < climaxSpread * i_stSpreadRatio)
+
+if det_st_a
+    ev_st_a      := true
+    phase        := 2
+    lastEvtBar   := bar_index - i_pivotLen
+    pvVol2       = volume[i_pivotLen]
+    pvSpread2    = high[i_pivotLen] - low[i_pivotLen]
+    closeness    = nz(rangeLow) > 0 ? math.abs(pivLow - rangeLow) / rangeLow * 100 : 5.0
+    q_st_a := math.min(
+         (pvVol2 < climaxVol * 0.5 ? 35.0 : pvVol2 < climaxVol * 0.7 ? 25.0 : 15.0) +
+         (pvSpread2 < climaxSpread * 0.6 ? 35.0 : pvSpread2 < climaxSpread * 0.8 ? 25.0 : 12.0) +
+         (closeness < 1.0 ? 30.0 : closeness < 2.0 ? 22.0 : 10.0), 100.0)
+
+// --- Spring (Phase C) ---
+// Price approaches/penetrates rangeLow and recovers — the shakeout
+// On HTF: ATR-based tolerance on level, allow skipping ST if enough bars passed
+canSpring = ev_st_a or (ev_ar_a and barsSince() >= winSTSkip)
+
+det_spring_base = mode == 1 and canSpring and not ev_spring
+     and barsSince() >= 2
+     and low <= rangeLow + atr * 0.2
+     and close >= rangeLow - atr * 0.3
+
+det_spring_lv = det_spring_base and isLowVol
+det_spring_hv = det_spring_base and isStrongClose
+det_spring_ok = det_spring_base and close > open
+
+if det_spring_lv or det_spring_hv or det_spring_ok
+    ev_spring    := true
+    phase        := 3
+    springLow    := low
+    lastEvtBar   := bar_index
+    if not ev_st_a
+        phase := 3
+    penetration  = nz(atr) > 0 ? (rangeLow - low) / atr : 1.0
+    q_spr := math.min(
+         (isLowVol ? 35.0 : volume < volMA ? 25.0 : 12.0) +
+         (close > open ? 25.0 : closePos >= 0.5 ? 15.0 : 8.0) +
+         (closePos >= 0.7 ? 20.0 : closePos >= 0.5 ? 12.0 : 5.0) +
+         (penetration < 0.5 ? 20.0 : penetration < 1.5 ? 15.0 : 5.0), 100.0)
+
+// --- Test after Spring ---
+// Higher low than Spring on diminished volume
+det_test = mode == 1 and ev_spring and not ev_test
+     and not na(pivLow)
+     and barsSince() >= 2 and barsSince() <= winTest
+     and pivLow > nz(springLow, rangeLow)
+     and volume[i_pivotLen] <= volMA[i_pivotLen] * (i_lowVolMult + 0.25)
+
+if det_test
+    ev_test      := true
+    lastEvtBar   := bar_index - i_pivotLen
+    pvVol3       = volume[i_pivotLen]
+    pvVolMA3     = volMA[i_pivotLen]
+    q_tst := math.min(
+         (pvVol3 < pvVolMA3 * 0.5 ? 40.0 : pvVol3 < pvVolMA3 * 0.7 ? 28.0 : 15.0) +
+         (pivLow > rangeLow ? 35.0 : 15.0) +
+         (close[i_pivotLen] > open[i_pivotLen] ? 25.0 : 12.0), 100.0)
+
+// --- Sign of Strength (SOS) ---
+// Breakout above AR high on increased volume — on HTF allow near-breakout
+det_sos = mode == 1 and ev_spring and not ev_sos
+     and barsSince() >= 2
+     and (close > nz(rangeHigh) or (isHTF and close > nz(rangeHigh) * (1 - 0.5 / 100)))
+     and (isHighVol or (isHTF and volume > volMA))
+     and (isStrongClose or (isHTF and closePos >= 0.5))
+
+if det_sos
+    ev_sos       := true
+    phase        := 4
+    lastEvtBar   := bar_index
+    q_sos := math.min(
+         (volRatio >= 2.0 ? 30.0 : volRatio >= 1.5 ? 22.0 : 12.0) +
+         (spreadRatio >= 1.5 ? 25.0 : spreadRatio >= 1.2 ? 18.0 : 10.0) +
+         (closePos >= 0.8 ? 25.0 : closePos >= 0.6 ? 18.0 : 8.0) +
+         (close > nz(rangeHigh) ? 20.0 : 10.0), 100.0)
+
+// --- Last Point of Support (LPS) ---
+// Pullback after SOS on low volume, holding above old resistance
+det_lps = mode == 1 and ev_sos and not ev_lps
+     and not na(pivLow)
+     and barsSince() >= 2 and barsSince() <= winLPS
+     and pivLow >= nz(rangeHigh) * (1 - aRangeTol / 100)
+     and volume[i_pivotLen] <= volMA[i_pivotLen] * (i_lowVolMult + 0.25)
+
+if det_lps
+    ev_lps       := true
+    phase        := 5
+    lastEvtBar   := bar_index - i_pivotLen
+    pvVol4       = volume[i_pivotLen]
+    pvVolMA4     = volMA[i_pivotLen]
+    pvSpread4    = high[i_pivotLen] - low[i_pivotLen]
+    pvAvgSpr4    = avgSpread[i_pivotLen]
+    q_lps := math.min(
+         (pvVol4 < pvVolMA4 * 0.5 ? 40.0 : pvVol4 < pvVolMA4 * 0.75 ? 28.0 : 12.0) +
+         (pvSpread4 < pvAvgSpr4 * i_narrowMult ? 30.0 : pvSpread4 < pvAvgSpr4 ? 18.0 : 8.0) +
+         (pivLow >= nz(rangeHigh) * 0.99 ? 30.0 : 15.0), 100.0)
+
+// ============================== DISTRIBUTION DETECTION ==============================
+
+// --- Buying Climax (BC) ---
+// High volume bar near highs, bullish context, NOT in downtrend
+det_bc = mode == 0
+     and not isDowntrend
+     and (isClimaxVol or (isHighVol and isWideSpread) or (isPeakVol and isWideSpread))
+     and nearHighs
+     and (close > open or closePos >= 0.5 or (isHTF and closePos >= 0.4))
+     and (isUptrend or isRising or close > close[5] or close > close[10] or isBullMom)
+
+if det_bc
+    mode         := 2
+    phase        := 1
+    ev_bc        := true
+    rangeHigh    := high
+    rangeStart   := bar_index
+    climaxVol    := volume
+    climaxSpread := spread
+    lastEvtBar   := bar_index
+    q_bc := math.min(
+         (volRatio >= 2.5 ? 30.0 : volRatio >= 2.0 ? 25.0 : volRatio >= 1.5 ? 18.0 : 10.0) +
+         (spreadRatio >= 1.8 ? 25.0 : spreadRatio >= 1.3 ? 18.0 : 10.0) +
+         (closePos <= 0.3 ? 25.0 : closePos <= 0.5 ? 15.0 : 8.0) +
+         (high >= highestHigh ? 20.0 : high >= highestHigh * 0.99 ? 15.0 : 8.0), 100.0)
+
+// --- BC Update: higher high with strong volume before AR ---
+if mode == 2 and ev_bc and not ev_ar_d and high > rangeHigh and volume >= climaxVol * 0.8
+    rangeHigh    := high
+    climaxVol    := math.max(climaxVol, volume)
+    climaxSpread := math.max(climaxSpread, spread)
+    lastEvtBar   := bar_index
+
+// --- Automatic Reaction (AR) – Distribution ---
+det_ar_d = mode == 2 and ev_bc and not ev_ar_d
+     and not na(pivLow)
+     and barsSince() >= 2 and barsSince() <= winAR
+
+if det_ar_d
+    ev_ar_d      := true
+    rangeLow     := pivLow
+    lastEvtBar   := bar_index - i_pivotLen
+    dropSizeP    = nz(rangeHigh) > 0 ? (rangeHigh - pivLow) / rangeHigh * 100 : 0.0
+    pvVolD       = volume[i_pivotLen]
+    pvVolMAD     = volMA[i_pivotLen]
+    q_ar_d := math.min(
+         (pvVolD > pvVolMAD ? 35.0 : 20.0) +
+         (close[i_pivotLen] < open[i_pivotLen] ? 25.0 : 12.0) +
+         (dropSizeP > 5 ? 40.0 : dropSizeP > 2 ? 30.0 : 15.0), 100.0)
+
+// --- Secondary Test (ST) – Distribution ---
+// Requires EITHER diminished volume OR diminished spread (relaxed from AND)
+det_st_d = mode == 2 and ev_ar_d and not ev_st_d
+     and not na(pivHigh)
+     and pivHigh <= rangeHigh * (1 + aRangeTol / 100)
+     and pivHigh >= rangeHigh * (1 - aRangeTol * 1.5 / 100)
+     and (volume[i_pivotLen] < climaxVol * i_stVolRatio
+          or (high[i_pivotLen] - low[i_pivotLen]) < climaxSpread * i_stSpreadRatio)
+
+if det_st_d
+    ev_st_d      := true
+    phase        := 2
+    lastEvtBar   := bar_index - i_pivotLen
+    pvVolD2      = volume[i_pivotLen]
+    pvSpreadD2   = high[i_pivotLen] - low[i_pivotLen]
+    closenessD   = nz(rangeHigh) > 0 ? math.abs(pivHigh - rangeHigh) / rangeHigh * 100 : 5.0
+    q_st_d := math.min(
+         (pvVolD2 < climaxVol * 0.5 ? 35.0 : pvVolD2 < climaxVol * 0.7 ? 25.0 : 15.0) +
+         (pvSpreadD2 < climaxSpread * 0.6 ? 35.0 : pvSpreadD2 < climaxSpread * 0.8 ? 25.0 : 12.0) +
+         (closenessD < 1.0 ? 30.0 : closenessD < 2.0 ? 22.0 : 10.0), 100.0)
+
+// --- UTAD (Upthrust After Distribution) ---
+// False breakout above range high that fails — the bull trap
+// On HTF: allow skipping ST if enough bars passed
+canUTAD = ev_st_d or (ev_ar_d and barsSince() >= winSTSkip)
+
+det_utad = mode == 2 and canUTAD and not ev_utad
+     and barsSince() >= 2
+     and high > nz(rangeHigh)
+     and close < nz(rangeHigh)
+
+if det_utad
+    ev_utad      := true
+    phase        := 3
+    lastEvtBar   := bar_index
+    if not ev_st_d
+        phase := 3
+    penetrationD = nz(atr) > 0 ? (high - nz(rangeHigh)) / atr : 1.0
+    q_utad := math.min(
+         (close < open ? 30.0 : closePos <= 0.5 ? 18.0 : 8.0) +
+         (isLowVol ? 25.0 : volume < volMA ? 18.0 : 8.0) +
+         (closePos <= 0.3 ? 25.0 : closePos <= 0.5 ? 15.0 : 5.0) +
+         (penetrationD < 1.0 ? 20.0 : penetrationD < 2.0 ? 12.0 : 5.0), 100.0)
+
+// --- Sign of Weakness (SOW) ---
+// Breakdown below AR low on increased volume — on HTF allow near-breakdown
+det_sow = mode == 2 and (ev_utad or ev_st_d) and not ev_sow
+     and barsSince() >= 2
+     and (close < nz(rangeLow) or (isHTF and close < nz(rangeLow) * (1 + 0.5 / 100)))
+     and (isHighVol or (isHTF and volume > volMA))
+     and (isWeakClose or (isHTF and closePos <= 0.5))
+
+if det_sow
+    ev_sow       := true
+    phase        := 4
+    lastEvtBar   := bar_index
+    q_sow := math.min(
+         (volRatio >= 2.0 ? 30.0 : volRatio >= 1.5 ? 22.0 : 12.0) +
+         (spreadRatio >= 1.5 ? 25.0 : spreadRatio >= 1.2 ? 18.0 : 10.0) +
+         (closePos <= 0.2 ? 25.0 : closePos <= 0.4 ? 18.0 : 8.0) +
+         (close < nz(rangeLow) ? 20.0 : 10.0), 100.0)
+
+// --- Last Point of Supply (LPSY) ---
+// Feeble rally after SOW, can't reach highs, low volume
+det_lpsy = mode == 2 and ev_sow and not ev_lpsy
+     and not na(pivHigh)
+     and barsSince() >= 2 and barsSince() <= winLPS
+     and pivHigh <= nz(rangeHigh)
+     and volume[i_pivotLen] <= volMA[i_pivotLen] * (i_lowVolMult + 0.25)
+
+if det_lpsy
+    ev_lpsy      := true
+    phase        := 5
+    lastEvtBar   := bar_index - i_pivotLen
+    pvVolD3      = volume[i_pivotLen]
+    pvVolMAD3    = volMA[i_pivotLen]
+    pvSpreadD3   = high[i_pivotLen] - low[i_pivotLen]
+    pvAvgSprD3   = avgSpread[i_pivotLen]
+    q_lpsy := math.min(
+         (pvVolD3 < pvVolMAD3 * 0.5 ? 40.0 : pvVolD3 < pvVolMAD3 * 0.75 ? 28.0 : 12.0) +
+         (pvSpreadD3 < pvAvgSprD3 * i_narrowMult ? 30.0 : pvSpreadD3 < pvAvgSprD3 ? 18.0 : 8.0) +
+         (pivHigh < nz(rangeHigh) * 0.99 ? 30.0 : 15.0), 100.0)
+
+// ============================== SCORING ==============================
+
+// Accumulation: SC=0.12 AR=0.08 ST=0.10 Spring=0.25 Test=0.10 SOS=0.20 LPS=0.15
+acc_score = mode == 1 ? math.min(
+     (ev_sc     ? q_sc   * 0.12 : 0.0) +
+     (ev_ar_a   ? q_ar_a * 0.08 : 0.0) +
+     (ev_st_a   ? q_st_a * 0.10 : 0.0) +
+     (ev_spring ? q_spr  * 0.25 : 0.0) +
+     (ev_test   ? q_tst  * 0.10 : 0.0) +
+     (ev_sos    ? q_sos  * 0.20 : 0.0) +
+     (ev_lps    ? q_lps  * 0.15 : 0.0),
+     100.0) : 0.0
+
+acc_count = (ev_sc ? 1 : 0) + (ev_ar_a ? 1 : 0) + (ev_st_a ? 1 : 0) + (ev_spring ? 1 : 0) + (ev_test ? 1 : 0) + (ev_sos ? 1 : 0) + (ev_lps ? 1 : 0)
+
+// Distribution: BC=0.12 AR=0.08 ST=0.10 UTAD=0.20 SOW=0.25 LPSY=0.25
+dist_score = mode == 2 ? math.min(
+     (ev_bc    ? q_bc   * 0.12 : 0.0) +
+     (ev_ar_d  ? q_ar_d * 0.08 : 0.0) +
+     (ev_st_d  ? q_st_d * 0.10 : 0.0) +
+     (ev_utad  ? q_utad * 0.20 : 0.0) +
+     (ev_sow   ? q_sow  * 0.25 : 0.0) +
+     (ev_lpsy  ? q_lpsy * 0.25 : 0.0),
+     100.0) : 0.0
+
+dist_count = (ev_bc ? 1 : 0) + (ev_ar_d ? 1 : 0) + (ev_st_d ? 1 : 0) + (ev_utad ? 1 : 0) + (ev_sow ? 1 : 0) + (ev_lpsy ? 1 : 0)
+
+currentScore  = mode == 1 ? acc_score : mode == 2 ? dist_score : 0.0
+currentCount  = mode == 1 ? acc_count : mode == 2 ? dist_count : 0
+maxEvents     = mode == 1 ? 7 : mode == 2 ? 6 : 0
+
+// ============================== LABELS ==============================
+
+if i_showLabels
+    pivBar = bar_index - i_pivotLen
+    accCol = bullCol
+    dstCol = bearCol
+    keyAccCol = color.rgb(0, 230, 118)
+    keyDstCol = color.rgb(255, 82, 82)
+
+    if det_sc
+        label.new(bar_index, low, 'SC', style = label.style_label_up, color = accCol, textcolor = color.white, size = lblSize)
+    if det_ar_a
+        label.new(pivBar, pivHigh, 'AR', style = label.style_label_down, color = accCol, textcolor = color.white, size = lblSize)
+    if det_st_a
+        label.new(pivBar, pivLow, 'ST', style = label.style_label_up, color = accCol, textcolor = color.white, size = lblSize)
+    if det_spring_lv or det_spring_hv or det_spring_ok
+        label.new(bar_index, low, 'SPRING', style = label.style_label_up, color = keyAccCol, textcolor = color.black, size = lblSize)
+    if det_test
+        label.new(pivBar, pivLow, 'TEST', style = label.style_label_up, color = accCol, textcolor = color.white, size = lblSize)
+    if det_sos
+        label.new(bar_index, high, 'SOS', style = label.style_label_down, color = keyAccCol, textcolor = color.black, size = lblSize)
+    if det_lps
+        label.new(pivBar, pivLow, 'LPS', style = label.style_label_up, color = accCol, textcolor = color.white, size = lblSize)
+
+    if det_bc
+        label.new(bar_index, high, 'BC', style = label.style_label_down, color = dstCol, textcolor = color.white, size = lblSize)
+    if det_ar_d
+        label.new(pivBar, pivLow, 'AR', style = label.style_label_up, color = dstCol, textcolor = color.white, size = lblSize)
+    if det_st_d
+        label.new(pivBar, pivHigh, 'ST', style = label.style_label_down, color = dstCol, textcolor = color.white, size = lblSize)
+    if det_utad
+        label.new(bar_index, high, 'UTAD', style = label.style_label_down, color = keyDstCol, textcolor = color.white, size = lblSize)
+    if det_sow
+        label.new(bar_index, low, 'SOW', style = label.style_label_up, color = keyDstCol, textcolor = color.white, size = lblSize)
+    if det_lpsy
+        label.new(pivBar, pivHigh, 'LPSY', style = label.style_label_down, color = dstCol, textcolor = color.white, size = lblSize)
+
+// ============================== TRADING RANGE BOX + LINES ==============================
+
+if i_showBox and not na(rangeHigh) and not na(rangeLow) and mode != 0
+    if not na(rangeBox)
+        box.delete(rangeBox)
+    bxCol = mode == 1 ? bullCol : bearCol
+    rangeBox := box.new(rangeStart, rangeHigh, bar_index, rangeLow,
+         border_color = color.new(bxCol, 40), bgcolor = color.new(bxCol, 93),
+         border_width = 1, border_style = line.style_dashed)
+
+if i_showRangeLines and not na(rangeHigh) and not na(rangeLow) and mode != 0
+    if not na(supportLine)
+        line.delete(supportLine)
+    if not na(resistLine)
+        line.delete(resistLine)
+    lnCol = mode == 1 ? bullCol : bearCol
+    resistLine := line.new(rangeStart, rangeHigh, bar_index, rangeHigh,
+         color = color.new(lnCol, 50), width = 1, style = line.style_dotted)
+    supportLine := line.new(rangeStart, rangeLow, bar_index, rangeLow,
+         color = color.new(lnCol, 50), width = 1, style = line.style_dotted)
+
+// ============================== INFO TABLE ==============================
+
+// Table helper functions (must be at global scope)
+statusTxt(bool detected, float quality) =>
+    detected ? str.tostring(quality, '#') + '%' : '—'
+
+statusCol(bool detected, float quality, color gc, color oc, color rc, color dc) =>
+    detected ? (quality >= 70 ? gc : quality >= 40 ? oc : rc) : dc
+
+dotTxt(bool detected) =>
+    detected ? '●' : '○'
+
+if i_showTable and barstate.islast
+    tPos = switch i_tablePos
+        'Top Left'     => position.top_left
+        'Top Right'    => position.top_right
+        'Bottom Left'  => position.bottom_left
+        => position.bottom_right
+
+    ROWS = 15
+    var table tbl = table.new(tPos, 4, ROWS,
+         bgcolor = color.rgb(10, 10, 14),
+         border_color = color.rgb(30, 30, 38),
+         border_width = 1,
+         frame_color = color.rgb(45, 45, 55),
+         frame_width = 2)
+
+    // ── Colors ──
+    goldCol    = color.rgb(218, 165, 32)
+    dimCol     = color.rgb(90, 90, 100)
+    labelCol   = color.rgb(140, 140, 155)
+    whiteCol   = color.rgb(220, 220, 225)
+    greenCol   = color.rgb(0, 230, 118)
+    orangeCol  = color.rgb(255, 165, 0)
+    redCol     = color.rgb(255, 82, 82)
+    headerBg   = color.rgb(18, 18, 25)
+    sectionBg  = color.rgb(15, 15, 20)
+
+    // ── Row 0: Title ──
+    table.cell(tbl, 0, 0, '⚜️', text_color = goldCol, text_size = size.normal, bgcolor = headerBg)
+    table.cell(tbl, 1, 0, 'QuantWyckoff', text_color = goldCol, text_size = size.normal, bgcolor = headerBg)
+    table.cell(tbl, 2, 0, '', bgcolor = headerBg)
+    table.cell(tbl, 3, 0, '', bgcolor = headerBg)
+
+    // ── Row 1: Pattern Type ──
+    pTxt = mode == 1 ? 'ACCUMULATION' : mode == 2 ? 'DISTRIBUTION' : 'SCANNING'
+    pCol = mode == 1 ? greenCol : mode == 2 ? redCol : dimCol
+    table.cell(tbl, 0, 1, 'Pattern', text_color = labelCol, text_size = size.small, bgcolor = sectionBg)
+    table.cell(tbl, 1, 1, pTxt, text_color = pCol, text_size = size.small, bgcolor = sectionBg, text_halign = text.align_right)
+    table.cell(tbl, 2, 1, '', bgcolor = sectionBg)
+    table.cell(tbl, 3, 1, '', bgcolor = sectionBg)
+
+    // ── Row 2: Overall Match Score ──
+    sTxt = mode != 0 ? str.tostring(currentScore, '#.0') + '%' : '—'
+    sCol = currentScore >= 60 ? greenCol : currentScore >= 35 ? orangeCol : currentScore > 0 ? redCol : dimCol
+    table.cell(tbl, 0, 2, 'Match', text_color = labelCol, text_size = size.small, bgcolor = sectionBg)
+    table.cell(tbl, 1, 2, sTxt, text_color = sCol, text_size = size.normal, bgcolor = sectionBg, text_halign = text.align_right)
+    table.cell(tbl, 2, 2, '', bgcolor = sectionBg)
+    table.cell(tbl, 3, 2, '', bgcolor = sectionBg)
+
+    // ── Row 3: Phase ──
+    phTxt = phase == 1 ? 'A · Stopping' : phase == 2 ? 'B · Building' : phase == 3 ? 'C · Test' : phase == 4 ? 'D · Breakout' : phase == 5 ? 'E · Confirmed' : '—'
+    phCol = phase >= 4 ? greenCol : phase >= 2 ? orangeCol : phase >= 1 ? whiteCol : dimCol
+    table.cell(tbl, 0, 3, 'Phase', text_color = labelCol, text_size = size.small, bgcolor = sectionBg)
+    table.cell(tbl, 1, 3, phTxt, text_color = phCol, text_size = size.small, bgcolor = sectionBg, text_halign = text.align_right)
+    table.cell(tbl, 2, 3, '', bgcolor = sectionBg)
+    table.cell(tbl, 3, 3, '', bgcolor = sectionBg)
+
+    // ── Row 4: Events count ──
+    evTxt = str.tostring(currentCount) + ' / ' + str.tostring(maxEvents)
+    table.cell(tbl, 0, 4, 'Events', text_color = labelCol, text_size = size.small, bgcolor = sectionBg)
+    table.cell(tbl, 1, 4, evTxt, text_color = whiteCol, text_size = size.small, bgcolor = sectionBg, text_halign = text.align_right)
+    table.cell(tbl, 2, 4, '', bgcolor = sectionBg)
+    table.cell(tbl, 3, 4, '', bgcolor = sectionBg)
+
+    // ── Row 5: Separator ──
+    table.cell(tbl, 0, 5, '───', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg)
+    table.cell(tbl, 1, 5, 'Event', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg, text_halign = text.align_right)
+    table.cell(tbl, 2, 5, '', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg)
+    table.cell(tbl, 3, 5, 'Quality', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg, text_halign = text.align_right)
+
+    // ── Rows 6-12: Event Checklist ──
+    if mode == 1
+        table.cell(tbl, 0, 6,  dotTxt(ev_sc),     text_color = statusCol(ev_sc, q_sc, greenCol, orangeCol, redCol, dimCol),         text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 6,  'Selling Climax',   text_color = ev_sc ? whiteCol : dimCol,      text_size = size.small)
+        table.cell(tbl, 2, 6,  'SC',               text_color = ev_sc ? labelCol : dimCol,      text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 6,  statusTxt(ev_sc, q_sc), text_color = statusCol(ev_sc, q_sc, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 7,  dotTxt(ev_ar_a),    text_color = statusCol(ev_ar_a, q_ar_a, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 7,  'Auto Rally',       text_color = ev_ar_a ? whiteCol : dimCol,    text_size = size.small)
+        table.cell(tbl, 2, 7,  'AR',               text_color = ev_ar_a ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 7,  statusTxt(ev_ar_a, q_ar_a), text_color = statusCol(ev_ar_a, q_ar_a, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 8,  dotTxt(ev_st_a),    text_color = statusCol(ev_st_a, q_st_a, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 8,  'Secondary Test',   text_color = ev_st_a ? whiteCol : dimCol,    text_size = size.small)
+        table.cell(tbl, 2, 8,  'ST',               text_color = ev_st_a ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 8,  statusTxt(ev_st_a, q_st_a), text_color = statusCol(ev_st_a, q_st_a, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 9,  dotTxt(ev_spring),  text_color = statusCol(ev_spring, q_spr, greenCol, orangeCol, redCol, dimCol),    text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 9,  'Spring',           text_color = ev_spring ? greenCol : dimCol,  text_size = size.small)
+        table.cell(tbl, 2, 9,  'SPR',              text_color = ev_spring ? labelCol : dimCol,  text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 9,  statusTxt(ev_spring, q_spr), text_color = statusCol(ev_spring, q_spr, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 10, dotTxt(ev_test),    text_color = statusCol(ev_test, q_tst, greenCol, orangeCol, redCol, dimCol),      text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 10, 'Test',             text_color = ev_test ? whiteCol : dimCol,    text_size = size.small)
+        table.cell(tbl, 2, 10, 'TST',              text_color = ev_test ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 10, statusTxt(ev_test, q_tst), text_color = statusCol(ev_test, q_tst, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 11, dotTxt(ev_sos),     text_color = statusCol(ev_sos, q_sos, greenCol, orangeCol, redCol, dimCol),       text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 11, 'Sign of Strength', text_color = ev_sos ? greenCol : dimCol,     text_size = size.small)
+        table.cell(tbl, 2, 11, 'SOS',              text_color = ev_sos ? labelCol : dimCol,     text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 11, statusTxt(ev_sos, q_sos), text_color = statusCol(ev_sos, q_sos, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 12, dotTxt(ev_lps),     text_color = statusCol(ev_lps, q_lps, greenCol, orangeCol, redCol, dimCol),       text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 12, 'Last Pt Support',  text_color = ev_lps ? whiteCol : dimCol,     text_size = size.small)
+        table.cell(tbl, 2, 12, 'LPS',              text_color = ev_lps ? labelCol : dimCol,     text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 12, statusTxt(ev_lps, q_lps), text_color = statusCol(ev_lps, q_lps, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+    else if mode == 2
+        table.cell(tbl, 0, 6,  dotTxt(ev_bc),      text_color = statusCol(ev_bc, q_bc, greenCol, orangeCol, redCol, dimCol),         text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 6,  'Buying Climax',    text_color = ev_bc ? whiteCol : dimCol,      text_size = size.small)
+        table.cell(tbl, 2, 6,  'BC',               text_color = ev_bc ? labelCol : dimCol,      text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 6,  statusTxt(ev_bc, q_bc), text_color = statusCol(ev_bc, q_bc, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 7,  dotTxt(ev_ar_d),    text_color = statusCol(ev_ar_d, q_ar_d, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 7,  'Auto Reaction',    text_color = ev_ar_d ? whiteCol : dimCol,    text_size = size.small)
+        table.cell(tbl, 2, 7,  'AR',               text_color = ev_ar_d ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 7,  statusTxt(ev_ar_d, q_ar_d), text_color = statusCol(ev_ar_d, q_ar_d, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 8,  dotTxt(ev_st_d),    text_color = statusCol(ev_st_d, q_st_d, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 8,  'Secondary Test',   text_color = ev_st_d ? whiteCol : dimCol,    text_size = size.small)
+        table.cell(tbl, 2, 8,  'ST',               text_color = ev_st_d ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 8,  statusTxt(ev_st_d, q_st_d), text_color = statusCol(ev_st_d, q_st_d, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 9,  dotTxt(ev_utad),    text_color = statusCol(ev_utad, q_utad, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 9,  'Upthrust (UTAD)',  text_color = ev_utad ? redCol : dimCol,      text_size = size.small)
+        table.cell(tbl, 2, 9,  'UT',               text_color = ev_utad ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 9,  statusTxt(ev_utad, q_utad), text_color = statusCol(ev_utad, q_utad, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 10, dotTxt(ev_sow),     text_color = statusCol(ev_sow, q_sow, greenCol, orangeCol, redCol, dimCol),       text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 10, 'Sign of Weakness', text_color = ev_sow ? redCol : dimCol,       text_size = size.small)
+        table.cell(tbl, 2, 10, 'SOW',              text_color = ev_sow ? labelCol : dimCol,     text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 10, statusTxt(ev_sow, q_sow), text_color = statusCol(ev_sow, q_sow, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+        table.cell(tbl, 0, 11, dotTxt(ev_lpsy),    text_color = statusCol(ev_lpsy, q_lpsy, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 11, 'Last Pt Supply',   text_color = ev_lpsy ? whiteCol : dimCol,    text_size = size.small)
+        table.cell(tbl, 2, 11, 'LPSY',             text_color = ev_lpsy ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
+        table.cell(tbl, 3, 11, statusTxt(ev_lpsy, q_lpsy), text_color = statusCol(ev_lpsy, q_lpsy, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+
+    else
+        table.cell(tbl, 0, 6, '○', text_color = dimCol, text_size = size.small, text_halign = text.align_center)
+        table.cell(tbl, 1, 6, 'Scanning for climax...', text_color = dimCol, text_size = size.small)
+        table.cell(tbl, 2, 6, '', text_color = dimCol, text_size = size.tiny)
+        table.cell(tbl, 3, 6, '', text_color = dimCol, text_size = size.small)
+
+    // ── Row 13: Separator ──
+    table.cell(tbl, 0, 13, '───', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg)
+    table.cell(tbl, 1, 13, '', bgcolor = headerBg)
+    table.cell(tbl, 2, 13, '', bgcolor = headerBg)
+    table.cell(tbl, 3, 13, '', bgcolor = headerBg)
+
+    // ── Row 14: Range Info ──
+    if mode != 0 and not na(rangeHigh) and not na(rangeLow)
+        rangePct = nz(rangeLow) > 0 ? (rangeHigh - rangeLow) / rangeLow * 100 : 0.0
+        table.cell(tbl, 0, 14, 'Range', text_color = labelCol, text_size = size.tiny, bgcolor = sectionBg)
+        table.cell(tbl, 1, 14, str.tostring(rangeLow, '#.2') + '  —  ' + str.tostring(rangeHigh, '#.2'), text_color = whiteCol, text_size = size.tiny, bgcolor = sectionBg)
+        table.cell(tbl, 2, 14, '', bgcolor = sectionBg)
+        table.cell(tbl, 3, 14, str.tostring(rangePct, '#.1') + '%', text_color = labelCol, text_size = size.tiny, bgcolor = sectionBg, text_halign = text.align_right)
+    else
+        table.cell(tbl, 0, 14, 'Range', text_color = dimCol, text_size = size.tiny, bgcolor = sectionBg)
+        table.cell(tbl, 1, 14, '—', text_color = dimCol, text_size = size.tiny, bgcolor = sectionBg)
+        table.cell(tbl, 2, 14, '', bgcolor = sectionBg)
+        table.cell(tbl, 3, 14, '', bgcolor = sectionBg)
+
+// ============================== ALERTS ==============================
+
+alertcondition(det_sc, 'Selling Climax (SC)', 'Wyckoff SC detected — potential accumulation starting')
+alertcondition(det_spring_lv or det_spring_hv or det_spring_ok, 'Spring', 'Wyckoff Spring detected — potential reversal')
+alertcondition(det_sos, 'Sign of Strength (SOS)', 'Wyckoff SOS detected — markup likely')
+alertcondition(det_bc, 'Buying Climax (BC)', 'Wyckoff BC detected — potential distribution starting')
+alertcondition(det_utad, 'UTAD', 'Wyckoff UTAD detected — potential reversal')
+alertcondition(det_sow, 'Sign of Weakness (SOW)', 'Wyckoff SOW detected — markdown likely')

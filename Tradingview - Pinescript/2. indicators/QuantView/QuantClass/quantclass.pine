@@ -1,0 +1,175 @@
+// This Pine Script(TM) code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// (c) TheTradingSpiderMan
+
+//@version=6
+indicator("QuantClass", overlay = false, precision = 4, max_labels_count = 50)
+
+import TheTradingSpiderMan/HighClassCalculations/1 as HCC
+import TheTradingSpiderMan/ColorsLibrary/2 as CLR
+
+groupCore = "Core"
+groupBenchmark = "Benchmark"
+groupDisplay = "Display"
+
+src = input.source(close, "Source", group = groupCore)
+lookback = input.int(50, "Lookback", minval = 5, group = groupCore)
+percentileInput = input.float(90.0, "Percentile", minval = 0.0, maxval = 100.0, step = 1.0, group = groupCore)
+annualization = input.float(252.0, "Annualization", minval = 1.0, step = 1.0, group = groupCore)
+riskFreeAnnual = input.float(0.02, "Risk Free Rate", step = 0.001, group = groupCore)
+minimumAcceptableAnnual = input.float(0.0, "Minimum Acceptable Return", step = 0.001, group = groupCore)
+atrLen = input.int(14, "ATR Length", minval = 1, group = groupCore)
+volumeLen = input.int(20, "Relative Volume Length", minval = 1, group = groupCore)
+
+benchmarkSymbol = input.symbol("SPY", "Benchmark Symbol", group = groupBenchmark)
+
+colorTheme = input.string("DEFAULT", "Color Theme", options = ["DEFAULT", "MONO", "VAPOR", "NEON", "OCEAN", "SUNSET", "FOREST", "CANDY", "FIRE", "ICE"], group = groupDisplay)
+showDashboard = input.bool(true, "Show Dashboard", group = groupDisplay)
+showFeatureCatalog = input.bool(false, "Show Feature Catalog", group = groupDisplay)
+showBackground = input.bool(true, "Show Score Background", group = groupDisplay)
+
+bullColor = CLR.bullColor(colorTheme)
+bearColor = CLR.bearColor(colorTheme)
+neutralColor = CLR.defaultNeutral()
+tableBg = color.new(color.black, 0)
+tableFrame = color.new(color.gray, 70)
+textColor = color.white
+
+benchmarkClose = request.security(benchmarkSymbol, timeframe.period, close)
+
+riskFreePerBar = HCC.safeDiv(riskFreeAnnual, annualization, 0.0)
+minimumAcceptablePerBar = HCC.safeDiv(minimumAcceptableAnnual, annualization, 0.0)
+
+normalized = HCC.normalize(src, lookback)
+rangePercent = HCC.rangePercent(src, lookback)
+zScore = HCC.zScore(src, lookback)
+robustZScore = HCC.robustZScore(src, lookback)
+percentileRank = HCC.percentileRank(src, lookback)
+percentileValue = HCC.percentileValue(src, lookback, percentileInput)
+
+simpleReturn = HCC.simpleReturn(src)
+logReturn = HCC.logReturn(src)
+lookbackReturn = HCC.compoundedReturn(src, lookback)
+realizedVolatility = HCC.realizedVolatility(src, lookback, annualization)
+downsideDeviation = HCC.downsideDeviation(simpleReturn, lookback, minimumAcceptablePerBar, annualization)
+rollingSharpe = HCC.rollingSharpe(simpleReturn, lookback, riskFreePerBar, annualization)
+rollingSortino = HCC.rollingSortino(simpleReturn, lookback, minimumAcceptablePerBar, annualization)
+efficiencyRatio = HCC.efficiencyRatio(src, lookback)
+regressionSlope = HCC.regressionSlope(src, lookback)
+regressionAngle = HCC.regressionAngle(src, lookback)
+
+benchmarkReturn = HCC.simpleReturn(benchmarkClose)
+benchmarkBeta = HCC.beta(simpleReturn, benchmarkReturn, lookback)
+benchmarkAlpha = HCC.alpha(simpleReturn, benchmarkReturn, lookback, riskFreePerBar)
+
+ulcerIndex = HCC.ulcerIndex(src, lookback)
+maxDrawdown = HCC.maxDrawdown(src, lookback)
+atrPercent = HCC.atrPercent(atrLen, src)
+relativeVolume = HCC.relativeVolume(volumeLen)
+featureCatalog = HCC.getAllFunctions()
+
+clampedZ = HCC.clamp(zScore, -3.0, 3.0)
+normalizedScore = na(normalized) ? na : HCC.rescale(normalized, 0.0, 1.0, -1.0, 1.0)
+rangeScore = na(rangePercent) ? na : HCC.rescale(rangePercent, 0.0, 100.0, -1.0, 1.0)
+rankScore = na(percentileRank) ? na : HCC.rescale(percentileRank, 0.0, 100.0, -1.0, 1.0)
+zScoreScaled = na(clampedZ) ? na : HCC.rescale(clampedZ, -3.0, 3.0, -1.0, 1.0)
+robustZScaled = na(robustZScore) ? na : HCC.rescale(HCC.clamp(robustZScore, -3.0, 3.0), -3.0, 3.0, -1.0, 1.0)
+rawClassScore = HCC.safeDiv(normalizedScore + rangeScore + rankScore + zScoreScaled + robustZScaled, 5.0, na)
+classScore = na(rawClassScore) ? na : HCC.clamp(HCC.rescale(rawClassScore, -1.0, 1.0, 0.0, 100.0), 0.0, 100.0)
+
+zDisplay = na(clampedZ) ? na : HCC.clamp(HCC.rescale(clampedZ, -3.0, 3.0, 0.0, 100.0), 0.0, 100.0)
+robustDisplay = na(robustZScore) ? na : HCC.clamp(HCC.rescale(HCC.clamp(robustZScore, -3.0, 3.0), -3.0, 3.0, 0.0, 100.0), 0.0, 100.0)
+trendDisplay = na(efficiencyRatio) ? na : HCC.clamp(HCC.rescale(efficiencyRatio, 0.0, 1.0, 0.0, 100.0), 0.0, 100.0)
+riskDisplay = na(rollingSharpe) ? na : HCC.clamp(HCC.rescale(rollingSharpe, -3.0, 3.0, 0.0, 100.0), 0.0, 100.0)
+
+scoreColor = na(classScore) ? neutralColor : CLR.gradientColor(classScore, colorTheme)
+zColor = na(zScore) ? neutralColor : zScore <= 0 ? bullColor : bearColor
+robustColor = na(robustZScore) ? neutralColor : robustZScore <= 0 ? bullColor : bearColor
+trendColor = na(efficiencyRatio) ? neutralColor : efficiencyRatio >= 0.5 ? bullColor : bearColor
+riskColor = na(rollingSharpe) ? neutralColor : rollingSharpe >= 0 ? bullColor : bearColor
+
+fmt(float value, string pattern = "#.####") =>
+    na(value) ? "na" : str.tostring(value, pattern)
+
+fmtPercent(float value, bool scaleBy100 = false) =>
+    na(value) ? "na" : str.tostring(scaleBy100 ? value * 100.0 : value, "#.##") + "%"
+
+signedColor(float value) =>
+    na(value) ? neutralColor : value >= 0 ? bullColor : bearColor
+
+boundedColor(float value, float threshold) =>
+    na(value) ? neutralColor : value >= threshold ? bullColor : bearColor
+
+inverseColor(float value, float threshold) =>
+    na(value) ? neutralColor : value <= threshold ? bullColor : bearColor
+
+var table dashboard = table.new(position.top_right, 4, 14, bgcolor = tableBg, border_width = 1, frame_width = 1, border_color = tableFrame, frame_color = tableFrame)
+
+setMetric(int col, int row, string name, string value, color valueColor) =>
+    table.cell(dashboard, col, row, name, text_color = textColor, bgcolor = tableBg, text_halign = text.align_left)
+    table.cell(dashboard, col + 1, row, value, text_color = valueColor, bgcolor = tableBg, text_halign = text.align_right)
+
+plot(classScore, "Class Score", color = scoreColor, linewidth = 3)
+plot(zDisplay, "Z-Score Heat", color = zColor, linewidth = 2)
+plot(robustDisplay, "Robust Z Heat", color = robustColor, linewidth = 2)
+plot(trendDisplay, "Efficiency Ratio", color = trendColor, linewidth = 2)
+plot(riskDisplay, "Sharpe Heat", color = riskColor, linewidth = 2)
+
+hline(80, "Upper Band", color = color.new(color.green, 70), linestyle = hline.style_dashed)
+hline(50, "Midline", color = color.new(color.gray, 60))
+hline(20, "Lower Band", color = color.new(color.red, 70), linestyle = hline.style_dashed)
+
+bgcolor(showBackground and not na(classScore) ? color.new(scoreColor, 92) : na)
+
+if barstate.islast and showDashboard
+    table.cell(dashboard, 0, 0, "Distribution / Utility", text_color = textColor, bgcolor = color.new(scoreColor, 80), text_halign = text.align_center)
+    table.cell(dashboard, 1, 0, "", bgcolor = color.new(scoreColor, 80))
+    table.cell(dashboard, 2, 0, "Return / Risk / Benchmark", text_color = textColor, bgcolor = color.new(scoreColor, 80), text_halign = text.align_center)
+    table.cell(dashboard, 3, 0, "", bgcolor = color.new(scoreColor, 80))
+
+    setMetric(0, 1, "Class Score", fmt(classScore, "#.##"), boundedColor(classScore, 50.0))
+    setMetric(0, 2, "Risk-Free / Bar", fmt(riskFreePerBar, "#.######"), neutralColor)
+    setMetric(0, 3, "Normalize", fmt(normalized, "#.####"), boundedColor(normalized, 0.5))
+    setMetric(0, 4, "Range %", fmtPercent(rangePercent), boundedColor(rangePercent, 50.0))
+    setMetric(0, 5, "Z-Score", fmt(zScore, "#.###"), zColor)
+    setMetric(0, 6, "Robust Z", fmt(robustZScore, "#.###"), robustColor)
+    setMetric(0, 7, "Percentile Rank", fmtPercent(percentileRank), boundedColor(percentileRank, 50.0))
+    setMetric(0, 8, "Percentile Value", fmt(percentileValue, "#.####"), signedColor(src - percentileValue))
+    setMetric(0, 9, "Clamped Z", fmt(clampedZ, "#.###"), zColor)
+    setMetric(0, 10, "Rescaled Trend", fmt(rawClassScore, "#.###"), signedColor(rawClassScore))
+    setMetric(0, 11, "ATR %", fmtPercent(atrPercent), inverseColor(atrPercent, 3.0))
+    setMetric(0, 12, "Relative Volume", fmt(relativeVolume, "#.###"), boundedColor(relativeVolume, 1.0))
+    setMetric(0, 13, "Catalog", showFeatureCatalog ? "visible" : "hidden", showFeatureCatalog ? bullColor : neutralColor)
+
+    setMetric(2, 1, "Simple Return", fmtPercent(simpleReturn, true), signedColor(simpleReturn))
+    setMetric(2, 2, "Log Return", fmtPercent(logReturn, true), signedColor(logReturn))
+    setMetric(2, 3, "Lookback Return", fmtPercent(lookbackReturn, true), signedColor(lookbackReturn))
+    setMetric(2, 4, "Realized Vol", fmtPercent(realizedVolatility, true), inverseColor(realizedVolatility, 0.20))
+    setMetric(2, 5, "Downside Dev", fmtPercent(downsideDeviation, true), inverseColor(downsideDeviation, 0.15))
+    setMetric(2, 6, "Sharpe", fmt(rollingSharpe, "#.###"), signedColor(rollingSharpe))
+    setMetric(2, 7, "Sortino", fmt(rollingSortino, "#.###"), signedColor(rollingSortino))
+    setMetric(2, 8, "Efficiency Ratio", fmt(efficiencyRatio, "#.###"), boundedColor(efficiencyRatio, 0.5))
+    setMetric(2, 9, "Regression Slope", fmt(regressionSlope, "#.#####"), signedColor(regressionSlope))
+    setMetric(2, 10, "Regression Angle", fmt(regressionAngle, "#.##"), signedColor(regressionAngle))
+    setMetric(2, 11, "Beta vs " + benchmarkSymbol, fmt(benchmarkBeta, "#.###"), boundedColor(benchmarkBeta, 1.0))
+    setMetric(2, 12, "Alpha vs " + benchmarkSymbol, fmt(benchmarkAlpha, "#.#####"), signedColor(benchmarkAlpha))
+    setMetric(2, 13, "Ulcer / MDD", fmt(ulcerIndex, "#.##") + " / " + fmtPercent(maxDrawdown, true), inverseColor(ulcerIndex, 10.0))
+else if barstate.islast
+    for col = 0 to 3
+        for row = 0 to 13
+            table.cell(dashboard, col, row, "", text_color = color.new(color.white, 100), bgcolor = color.new(color.black, 100))
+
+featureCatalogMultiline = str.replace_all(featureCatalog, ",", "\n")
+
+var label featureLabel = na
+
+// Optional catalog label proves and exposes the library's full feature list directly in the indicator.
+if barstate.islast
+    if showFeatureCatalog
+        if na(featureLabel)
+            featureLabel := label.new(bar_index, 100, "", style = label.style_label_left, textcolor = textColor, color = color.new(color.black, 20), size = size.tiny)
+        label.set_x(featureLabel, bar_index)
+        label.set_y(featureLabel, 100)
+        label.set_text(featureLabel, "HCC Feature Catalog\n" + featureCatalogMultiline)
+    else if not na(featureLabel)
+        label.delete(featureLabel)
+        featureLabel := na
