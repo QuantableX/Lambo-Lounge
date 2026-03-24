@@ -57,10 +57,10 @@ i_maType = input.string('EMA', 'MA Type', options = [
      'HWMA', 'GDEMA', 'REMA', 'MODULARFILTER', 'RMT', 'QRMA', 'WILDERSMOOTH',
      'LEOMA', 'AHRENSMA', 'RUNNINGMA', 'PPOMA', 'MAMA', 'FAMAVAL', 'FISHERMA', 'CMA'
      ], group = GROUP_MA, tooltip = 'Single Mode: The MA to compare price against\nDouble Mode: The Fast MA')
-i_maLen = input.int(21, 'MA Length', minval = 1, group = GROUP_MA)
+i_maLen = input.int(12, 'MA Length', minval = 1, group = GROUP_MA)
 
 // Slow MA (Double mode)
-i_slowMaType = input.string('SMA', 'Slow MA Type', options = [
+i_slowMaType = input.string('EMA', 'Slow MA Type', options = [
      'SMA', 'EMA', 'WMA', 'VWMA', 'RMA', 'SMMA', 'SWMA',
      'HMA', 'EHMA',
      'DEMA', 'TEMA', 'TMA', 'T3', 'TWMA', 'SWWMA', 'TRIXSMOOTH',
@@ -75,7 +75,7 @@ i_slowMaType = input.string('SMA', 'Slow MA Type', options = [
      'HWMA', 'GDEMA', 'REMA', 'MODULARFILTER', 'RMT', 'QRMA', 'WILDERSMOOTH',
      'LEOMA', 'AHRENSMA', 'RUNNINGMA', 'PPOMA', 'MAMA', 'FAMAVAL', 'FISHERMA', 'CMA'
      ], group = GROUP_MA, tooltip = 'Only used in Double Mode — the Slow MA for crossover signals')
-i_slowMaLen = input.int(50, 'Slow MA Length', minval = 1, group = GROUP_MA)
+i_slowMaLen = input.int(21, 'Slow MA Length', minval = 1, group = GROUP_MA)
 
 // Dashboard
 i_showDashboard = input.bool(true, 'Show Dashboard', group = GROUP_DASHBOARD)
@@ -86,6 +86,8 @@ i_colorTheme = input.string('DEFAULT', 'Color Theme', options = ['DEFAULT', 'MON
 
 // Backtest
 i_direction  = input.string("Long & Short", "Direction", options = ["Long Only", "Short Only", "Long & Short"], group = GROUP_BACKTEST)
+i_startDate  = input.time(defval = timestamp("01 01 2018"), title = "Start Date", group = GROUP_BACKTEST)
+i_endDate    = input.time(defval = timestamp("01 01 2099"), title = "End Date", group = GROUP_BACKTEST)
 i_btOption   = input.string("Full", "Backtest Table", options = ["Full", "Simple", "None"], group = GROUP_BACKTEST)
 i_btPosition = input.string("Bottom Right", "Table Position", options = ["Top Left", "Middle Left", "Bottom Left", "Top Right", "Middle Right", "Bottom Right", "Top Center", "Bottom Center"], group = GROUP_BACKTEST)
 i_curveType  = input.string("Equity", "Equity Curve", options = ["Equity", "Open Profit", "Net Profit", "Gross Profit", "None"], group = GROUP_BACKTEST)
@@ -131,19 +133,21 @@ trendColor = isBullish ? bullColor : bearColor
 //-Strategy Logic-----------------------------------------------------------------------------------------------------//
 //====================================================================================================================//
 
-bool goLong  = i_direction == "Long Only" or i_direction == "Long & Short"
-bool goShort = i_direction == "Short Only" or i_direction == "Long & Short"
+bool goLong     = i_direction == "Long Only" or i_direction == "Long & Short"
+bool goShort    = i_direction == "Short Only" or i_direction == "Long & Short"
+bool inDateRange = time >= i_startDate and time <= i_endDate
 
-if bullSignal
-    if goLong
-        strategy.entry("Long", strategy.long)
-    if goShort
-        strategy.close("Short")
-if bearSignal
-    if goLong
-        strategy.close("Long")
-    if goShort
-        strategy.entry("Short", strategy.short)
+if inDateRange
+    if bullSignal
+        if goLong
+            strategy.entry("Long", strategy.long)
+        if goShort
+            strategy.close("Short")
+    if bearSignal
+        if goLong
+            strategy.close("Long")
+        if goShort
+            strategy.entry("Short", strategy.short)
 
 //====================================================================================================================//
 //-Dashboard----------------------------------------------------------------------------------------------------------//

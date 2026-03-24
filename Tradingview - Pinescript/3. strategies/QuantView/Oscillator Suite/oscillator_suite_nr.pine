@@ -100,6 +100,8 @@ i_colorTheme = input.string('DEFAULT', 'Color Theme', options = ['DEFAULT', 'MON
 // Backtest
 i_signalMode = input.string("Midline", "Signal Mode", options = ["Midline", "Momentum", "Signal Line"], group = GROUP_BACKTEST, tooltip = 'Midline: cross above/below midline\nMomentum: cross above OB / below OS levels\nSignal Line: oscillator crosses signal line')
 i_direction  = input.string("Long & Short", "Direction", options = ["Long Only", "Short Only", "Long & Short"], group = GROUP_BACKTEST)
+i_startDate  = input.time(defval = timestamp("01 01 2018"), title = "Start Date", group = GROUP_BACKTEST)
+i_endDate    = input.time(defval = timestamp("01 01 2099"), title = "End Date", group = GROUP_BACKTEST)
 i_btOption   = input.string("Full", "Backtest Table", options = ["Full", "Simple", "None"], group = GROUP_BACKTEST)
 i_btPosition = input.string("Bottom Right", "Table Position", options = ["Top Left", "Middle Left", "Bottom Left", "Top Right", "Middle Right", "Bottom Right", "Top Center", "Bottom Center"], group = GROUP_BACKTEST)
 i_curveType  = input.string("Equity", "Equity Curve", options = ["Equity", "Open Profit", "Net Profit", "Gross Profit", "None"], group = GROUP_BACKTEST)
@@ -402,8 +404,9 @@ float signalLine = MA.selector(finalOsc, i_signalLen, i_signalMaType)
 //-Strategy Logic-----------------------------------------------------------------------------------------------------//
 //====================================================================================================================//
 
-bool goLong  = i_direction == "Long Only" or i_direction == "Long & Short"
-bool goShort = i_direction == "Short Only" or i_direction == "Long & Short"
+bool goLong     = i_direction == "Long Only" or i_direction == "Long & Short"
+bool goShort    = i_direction == "Short Only" or i_direction == "Long & Short"
+bool inDateRange = time >= i_startDate and time <= i_endDate
 
 bool bullTrigger = switch i_signalMode
     "Midline"     => ta.crossover(finalOsc, midLevel)
@@ -414,16 +417,17 @@ bool bearTrigger = switch i_signalMode
     "Momentum"    => ta.crossunder(finalOsc, osLevel)
     "Signal Line" => ta.crossunder(finalOsc, signalLine)
 
-if bullTrigger
-    if goLong
-        strategy.entry("Long", strategy.long)
-    if goShort
-        strategy.close("Short")
-if bearTrigger
-    if goLong
-        strategy.close("Long")
-    if goShort
-        strategy.entry("Short", strategy.short)
+if inDateRange
+    if bullTrigger
+        if goLong
+            strategy.entry("Long", strategy.long)
+        if goShort
+            strategy.close("Short")
+    if bearTrigger
+        if goLong
+            strategy.close("Long")
+        if goShort
+            strategy.entry("Short", strategy.short)
 
 //====================================================================================================================//
 //-Dashboard----------------------------------------------------------------------------------------------------------//
