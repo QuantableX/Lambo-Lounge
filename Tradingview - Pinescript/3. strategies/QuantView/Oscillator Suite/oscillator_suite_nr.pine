@@ -1,0 +1,516 @@
+// This Pine Script(TM) code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// (c) TheTradingSpiderMan
+
+//====================================================================================================================//
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//@version=6
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//====================================================================================================================//
+
+import TheTradingSpiderMan/MovingAverages/1 as MA
+import TheTradingSpiderMan/HighClassCalculations/1 as HCC
+import TheTradingSpiderMan/ColorsLibrary/2 as CLR
+import TheTradingSpiderMan/backtest_nr/1 as BT
+
+//====================================================================================================================//
+//-Init---------------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+strategy(title = '⚜️ 𝐎𝐬𝐜𝐢𝐥𝐥𝐚𝐭𝐨𝐫 𝐒𝐮𝐢𝐭𝐞 [Strat_NR] ⚜️', overlay = false, precision = 4, max_labels_count = 500, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, initial_capital = 10000, commission_type = strategy.commission.percent, commission_value = 0.1)
+
+//====================================================================================================================//
+//-Constants----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+BG_COLOR        = color.rgb(0, 0, 0)
+BORDER_COLOR    = color.rgb(30, 30, 30)
+FRAME_COLOR     = color.rgb(35, 35, 35)
+TEXT_COLOR       = color.white
+
+GROUP_GENERAL    = '⚜️ 𝐆𝐞𝐧𝐞𝐫𝐚𝐥 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️'
+GROUP_OSCILLATOR = '⚜️ 𝐎𝐬𝐜𝐢𝐥𝐥𝐚𝐭𝐨𝐫 ⚜️'
+GROUP_PARAMS     = '⚜️ 𝐏𝐚𝐫𝐚𝐦𝐞𝐭𝐞𝐫𝐬 ⚜️'
+GROUP_NORMALIZE  = '⚜️ 𝐍𝐨𝐫𝐦𝐚𝐥𝐢𝐳𝐚𝐭𝐢𝐨𝐧 ⚜️'
+GROUP_SIGNAL     = '⚜️ 𝐒𝐢𝐠𝐧𝐚𝐥 𝐋𝐢𝐧𝐞 ⚜️'
+GROUP_LEVELS     = '⚜️ 𝐋𝐞𝐯𝐞𝐥𝐬 ⚜️'
+GROUP_DASHBOARD  = '⚜️ 𝐃𝐚𝐬𝐡𝐛𝐨𝐚𝐫𝐝 ⚜️'
+GROUP_COLORS     = '⚜️ 𝐂𝐨𝐥𝐨𝐫𝐬 ⚜️'
+GROUP_BACKTEST   = '⚜️ 𝐁𝐚𝐜𝐤𝐭𝐞𝐬𝐭 ⚜️'
+
+//====================================================================================================================//
+//-Settings-----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+// General
+i_dataMode = input.string('Live', 'Data Mode', options = ['Live', 'Confirmed'], group = GROUP_GENERAL, tooltip = 'Live: Real-time data\nConfirmed: Closed bars only (no repainting)')
+i_source   = input.source(close, 'Source', group = GROUP_GENERAL)
+
+// Oscillator Selection
+i_oscType = input.string('RSI', 'Oscillator', options = [
+     'RSI', 'Stochastic %K', 'Stochastic %D', 'Stochastic RSI', 'Williams %R',
+     'CCI', 'MFI', 'ROC', 'Momentum', 'CMO',
+     'TSI', 'Ultimate Oscillator', 'Awesome Oscillator', 'Accelerator Oscillator', 'TRIX',
+     'Coppock Curve', 'KST', 'DPO', 'Aroon Oscillator', 'Balance of Power',
+     'SMI', 'Ergodic Oscillator',
+     'MACD', 'MACD Histogram', 'PPO', 'APO',
+     'Chaikin Oscillator', 'Volume Oscillator', 'OBV Oscillator', 'Klinger Oscillator',
+     'CMF', 'EMV', 'VWAP Deviation', 'PVT Oscillator', 'A/D Oscillator', 'Force Index',
+     'Bollinger %B', 'Bollinger Bandwidth', 'Keltner Oscillator', 'Donchian Oscillator',
+     'ATR Ratio', 'Historical Volatility', 'Chaikin Volatility',
+     'Z-Score', 'Robust Z-Score', 'Percentile Rank'
+     ], group = GROUP_OSCILLATOR)
+
+// Parameters
+i_length    = input.int(14, 'Length', minval = 1, group = GROUP_PARAMS, tooltip = 'Primary lookback period')
+i_fastLen   = input.int(12, 'Fast Length', minval = 1, group = GROUP_PARAMS, tooltip = 'Fast period for MACD, Chaikin, Volume Osc, Klinger')
+i_slowLen   = input.int(26, 'Slow Length', minval = 1, group = GROUP_PARAMS, tooltip = 'Slow period for MACD, Chaikin, Volume Osc, Klinger')
+i_smoothK   = input.int(3, 'Smooth K', minval = 1, group = GROUP_PARAMS, tooltip = 'Stochastic %K smoothing / Balance of Power smoothing')
+i_smoothD   = input.int(3, 'Smooth D', minval = 1, group = GROUP_PARAMS, tooltip = 'Stochastic %D smoothing')
+i_rsiLen    = input.int(14, 'RSI Length', minval = 1, group = GROUP_PARAMS, tooltip = 'RSI lookback for Stochastic RSI')
+i_longLen   = input.int(25, 'Long Length', minval = 1, group = GROUP_PARAMS, tooltip = 'TSI / Ergodic long smoothing period')
+i_shortLen  = input.int(13, 'Short Length', minval = 1, group = GROUP_PARAMS, tooltip = 'TSI / Ergodic short smoothing period')
+i_bbMult    = input.float(2.0, 'Band Multiplier', minval = 0.1, step = 0.1, group = GROUP_PARAMS, tooltip = 'Bollinger / Keltner band multiplier')
+i_len1      = input.int(7, 'Period 1', minval = 1, group = GROUP_PARAMS, tooltip = 'Ultimate Osc period 1 / Coppock WMA length')
+i_len2      = input.int(14, 'Period 2', minval = 1, group = GROUP_PARAMS, tooltip = 'Ultimate Osc period 2 / Coppock ROC 1 length')
+i_len3      = input.int(28, 'Period 3', minval = 1, group = GROUP_PARAMS, tooltip = 'Ultimate Osc period 3 / Coppock ROC 2 length')
+i_maType    = input.string('EMA', 'MA Type', options = ['SMA', 'EMA', 'WMA', 'VWMA', 'RMA', 'HMA', 'DEMA', 'TEMA', 'KAMA', 'T3', 'ALMA', 'FRAMA', 'VIDYA', 'JMA', 'MCGINLEY', 'ZLEMA', 'LSMA', 'TMA', 'SUPERSMOOTHER', 'LAGUERRE'], group = GROUP_PARAMS, tooltip = 'MA type for MACD family, OBV, PVT, A/D smoothing')
+
+// Normalization
+i_normMethod = input.string('None', 'Normalization', options = ['None', 'Z-Score', 'Robust Z-Score', 'Min-Max (0-100)', 'Min-Max (0-1)', 'Percentile Rank', 'Detrend (MA)', 'Detrend (LinReg)', 'Stochastic', 'Inverse Fisher', 'Fisher Transform', 'Sigmoid'], group = GROUP_NORMALIZE)
+i_normLen    = input.int(50, 'Norm Lookback', minval = 5, group = GROUP_NORMALIZE, tooltip = 'Lookback window for normalization calculations')
+i_detrendMa  = input.string('SMA', 'Detrend MA Type', options = ['SMA', 'EMA', 'WMA', 'VWMA', 'RMA', 'HMA', 'DEMA', 'TEMA', 'KAMA', 'T3', 'ALMA', 'FRAMA', 'VIDYA', 'JMA', 'MCGINLEY', 'ZLEMA', 'LSMA', 'TMA', 'SUPERSMOOTHER', 'LAGUERRE'], group = GROUP_NORMALIZE, tooltip = 'MA type used for Detrend (MA) normalization')
+
+// Signal Line
+i_signalLen    = input.int(9, 'Signal Length', minval = 1, group = GROUP_SIGNAL)
+i_signalMaType = input.string('EMA', 'Signal MA Type', options = ['SMA', 'EMA', 'WMA', 'VWMA', 'RMA', 'HMA', 'DEMA', 'TEMA', 'KAMA', 'T3', 'ALMA', 'FRAMA', 'VIDYA', 'JMA', 'MCGINLEY', 'ZLEMA', 'LSMA', 'TMA', 'SUPERSMOOTHER', 'LAGUERRE'], group = GROUP_SIGNAL)
+
+// Levels
+i_obLevel    = input.float(70, 'Overbought Level', group = GROUP_LEVELS)
+i_osLevel    = input.float(30, 'Oversold Level', group = GROUP_LEVELS)
+i_midLevel   = input.float(50, 'Midline', group = GROUP_LEVELS)
+i_autoLevels = input.bool(false, 'Auto-Detect Levels', group = GROUP_LEVELS, tooltip = 'Automatically sets OB/OS/Mid based on oscillator type and normalization')
+
+// Dashboard
+i_showDashboard = input.bool(true, 'Show Dashboard', group = GROUP_DASHBOARD)
+i_dashPosition  = input.string('Top Right', 'Position', options = ['Top Left', 'Top Right', 'Bottom Left', 'Bottom Right'], group = GROUP_DASHBOARD)
+
+// Colors
+i_colorTheme = input.string('DEFAULT', 'Color Theme', options = ['DEFAULT', 'MONO', 'VAPOR', 'NEON', 'OCEAN', 'SUNSET', 'FOREST', 'CANDY', 'FIRE', 'ICE'], group = GROUP_COLORS)
+
+// Backtest
+i_signalMode = input.string("Midline", "Signal Mode", options = ["Midline", "Momentum", "Signal Line"], group = GROUP_BACKTEST, tooltip = 'Midline: cross above/below midline\nMomentum: cross above OB / below OS levels\nSignal Line: oscillator crosses signal line')
+i_direction  = input.string("Long & Short", "Direction", options = ["Long Only", "Short Only", "Long & Short"], group = GROUP_BACKTEST)
+i_btOption   = input.string("Full", "Backtest Table", options = ["Full", "Simple", "None"], group = GROUP_BACKTEST)
+i_btPosition = input.string("Bottom Right", "Table Position", options = ["Top Left", "Middle Left", "Bottom Left", "Top Right", "Middle Right", "Bottom Right", "Top Center", "Bottom Center"], group = GROUP_BACKTEST)
+i_curveType  = input.string("Equity", "Equity Curve", options = ["Equity", "Open Profit", "Net Profit", "Gross Profit", "None"], group = GROUP_BACKTEST)
+
+//====================================================================================================================//
+//-Color Setup--------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+bullColor    = CLR.bullColor(i_colorTheme)
+bearColor    = CLR.bearColor(i_colorTheme)
+neutralColor = CLR.defaultNeutral()
+
+//====================================================================================================================//
+//-Helper Functions---------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+fmt(float value, string pattern = "#.####") =>
+    na(value) ? "—" : str.tostring(value, pattern)
+
+signedColor(float value) =>
+    na(value) ? neutralColor : value >= 0 ? bullColor : bearColor
+
+boundedColor(float value, float threshold) =>
+    na(value) ? neutralColor : value >= threshold ? bullColor : bearColor
+
+//====================================================================================================================//
+//-Oscillator Engine--------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+calcOscillator(string oscType, float src) =>
+    float result = switch oscType
+        // ── Momentum Oscillators ──
+        "RSI" =>
+            ta.rsi(src, i_length)
+        "Stochastic %K" =>
+            ta.sma(ta.stoch(close, high, low, i_length), i_smoothK)
+        "Stochastic %D" =>
+            ta.sma(ta.sma(ta.stoch(close, high, low, i_length), i_smoothK), i_smoothD)
+        "Stochastic RSI" =>
+            float rsiVal = ta.rsi(src, i_rsiLen)
+            ta.sma(ta.stoch(rsiVal, rsiVal, rsiVal, i_length), i_smoothK)
+        "Williams %R" =>
+            -100 * (ta.highest(high, i_length) - close) / (ta.highest(high, i_length) - ta.lowest(low, i_length))
+        "CCI" =>
+            ta.cci(src, i_length)
+        "MFI" =>
+            ta.mfi(hlc3, i_length)
+        "ROC" =>
+            ta.roc(src, i_length)
+        "Momentum" =>
+            ta.mom(src, i_length)
+        "CMO" =>
+            float mUp = math.max(ta.change(src), 0)
+            float mDn = -math.min(ta.change(src), 0)
+            float sumUp = math.sum(mUp, i_length)
+            float sumDn = math.sum(mDn, i_length)
+            100 * HCC.safeDiv(sumUp - sumDn, sumUp + sumDn, 0.0)
+        "TSI" =>
+            float pc = ta.change(src)
+            float dsPC = ta.ema(ta.ema(pc, i_longLen), i_shortLen)
+            float dsAbsPC = ta.ema(ta.ema(math.abs(pc), i_longLen), i_shortLen)
+            100 * HCC.safeDiv(dsPC, dsAbsPC, 0.0)
+        "Ultimate Oscillator" =>
+            float bp = close - math.min(low, close[1])
+            float tr = math.max(high, close[1]) - math.min(low, close[1])
+            float avg1 = HCC.safeDiv(math.sum(bp, i_len1), math.sum(tr, i_len1), 0.0)
+            float avg2 = HCC.safeDiv(math.sum(bp, i_len2), math.sum(tr, i_len2), 0.0)
+            float avg3 = HCC.safeDiv(math.sum(bp, i_len3), math.sum(tr, i_len3), 0.0)
+            100 * HCC.safeDiv(4 * avg1 + 2 * avg2 + avg3, 7.0, 0.0)
+        "Awesome Oscillator" =>
+            ta.sma(hl2, 5) - ta.sma(hl2, 34)
+        "Accelerator Oscillator" =>
+            float ao = ta.sma(hl2, 5) - ta.sma(hl2, 34)
+            ao - ta.sma(ao, 5)
+        "TRIX" =>
+            float ema1 = ta.ema(src, i_length)
+            float ema2 = ta.ema(ema1, i_length)
+            float ema3 = ta.ema(ema2, i_length)
+            10000 * ta.change(ema3) / ema3
+        "Coppock Curve" =>
+            float roc1 = ta.roc(src, i_len2)
+            float roc2 = ta.roc(src, i_len3)
+            ta.wma(roc1 + roc2, i_len1)
+        "KST" =>
+            float r1 = ta.sma(ta.roc(src, 10), 10)
+            float r2 = ta.sma(ta.roc(src, 15), 10)
+            float r3 = ta.sma(ta.roc(src, 20), 10)
+            float r4 = ta.sma(ta.roc(src, 30), 15)
+            r1 + 2 * r2 + 3 * r3 + 4 * r4
+        "DPO" =>
+            int shift = math.floor(i_length / 2) + 1
+            src - ta.sma(src, i_length)[shift]
+        "Aroon Oscillator" =>
+            float aroonUp = 100.0 * (ta.highestbars(high, i_length + 1) + i_length) / i_length
+            float aroonDn = 100.0 * (ta.lowestbars(low, i_length + 1) + i_length) / i_length
+            aroonUp - aroonDn
+        "Balance of Power" =>
+            float rawBop = HCC.safeDiv(close - open, high - low, 0.0)
+            ta.sma(rawBop, i_smoothK)
+        "SMI" =>
+            float hh = ta.highest(high, i_length)
+            float ll = ta.lowest(low, i_length)
+            float diff = close - (hh + ll) / 2
+            float rng = hh - ll
+            float sm1 = ta.ema(ta.ema(diff, i_fastLen), i_slowLen)
+            float sm2 = ta.ema(ta.ema(rng, i_fastLen), i_slowLen)
+            200 * HCC.safeDiv(sm1, sm2, 0.0)
+        "Ergodic Oscillator" =>
+            float pcE = ta.change(src)
+            float tsiE = 100 * HCC.safeDiv(ta.ema(ta.ema(pcE, i_longLen), i_shortLen), ta.ema(ta.ema(math.abs(pcE), i_longLen), i_shortLen), 0.0)
+            float tsiSig = ta.ema(tsiE, i_signalLen)
+            tsiE - tsiSig
+
+        // ── MACD Family ──
+        "MACD" =>
+            MA.selector(src, i_fastLen, i_maType) - MA.selector(src, i_slowLen, i_maType)
+        "MACD Histogram" =>
+            float macdLine = MA.selector(src, i_fastLen, i_maType) - MA.selector(src, i_slowLen, i_maType)
+            float macdSig = MA.selector(macdLine, i_signalLen, i_maType)
+            macdLine - macdSig
+        "PPO" =>
+            float slowMA = MA.selector(src, i_slowLen, i_maType)
+            100 * HCC.safeDiv(MA.selector(src, i_fastLen, i_maType) - slowMA, slowMA, 0.0)
+        "APO" =>
+            MA.selector(src, i_fastLen, i_maType) - MA.selector(src, i_slowLen, i_maType)
+
+        // ── Volume-Based Oscillators ──
+        "Chaikin Oscillator" =>
+            float ad = ta.accdist
+            ta.ema(ad, i_fastLen) - ta.ema(ad, i_slowLen)
+        "Volume Oscillator" =>
+            float fastVol = ta.sma(volume, i_fastLen)
+            float slowVol = ta.sma(volume, i_slowLen)
+            100 * HCC.safeDiv(fastVol - slowVol, slowVol, 0.0)
+        "OBV Oscillator" =>
+            float obvVal = ta.obv
+            obvVal - MA.selector(obvVal, i_length, i_maType)
+        "Klinger Oscillator" =>
+            float dm = high - low
+            float cm = na(dm[1]) ? dm : (close > close[1] == close[1] > close[2] ? dm[1] + dm : dm)
+            float vf = volume * math.abs(2 * HCC.safeDiv(dm, cm, 0.0) - 1) * (close > close[1] ? 1 : -1)
+            ta.ema(vf, i_fastLen) - ta.ema(vf, i_slowLen)
+        "CMF" =>
+            float mfm = HCC.safeDiv((close - low) - (high - close), high - low, 0.0)
+            float mfv = mfm * volume
+            HCC.safeDiv(math.sum(mfv, i_length), math.sum(volume, i_length), 0.0)
+        "EMV" =>
+            float emvDist = (high + low) / 2 - (high[1] + low[1]) / 2
+            float emvBR = HCC.safeDiv(volume, 10000 * (high - low), 0.0)
+            ta.sma(HCC.safeDiv(emvDist, emvBR, 0.0), i_length)
+        "VWAP Deviation" =>
+            float vwapVal = ta.vwap
+            float vwapDev = ta.stdev(close - vwapVal, i_length)
+            HCC.safeDiv(close - vwapVal, vwapDev, 0.0)
+        "PVT Oscillator" =>
+            float pvtVal = ta.pvt
+            pvtVal - MA.selector(pvtVal, i_length, i_maType)
+        "A/D Oscillator" =>
+            float adVal = ta.accdist
+            adVal - MA.selector(adVal, i_length, i_maType)
+        "Force Index" =>
+            ta.ema(volume * ta.change(close), i_length)
+
+        // ── Volatility-Based Oscillators ──
+        "Bollinger %B" =>
+            float bbBasis = ta.sma(src, i_length)
+            float bbDev = i_bbMult * ta.stdev(src, i_length)
+            HCC.safeDiv(src - (bbBasis - bbDev), 2 * bbDev, 0.0)
+        "Bollinger Bandwidth" =>
+            float bbBasis2 = ta.sma(src, i_length)
+            float bbDev2 = i_bbMult * ta.stdev(src, i_length)
+            100 * HCC.safeDiv(2 * bbDev2, bbBasis2, 0.0)
+        "Keltner Oscillator" =>
+            float kcMid = ta.ema(src, i_length)
+            float kcRange = i_bbMult * ta.atr(i_length)
+            HCC.safeDiv(src - kcMid, kcRange, 0.0)
+        "Donchian Oscillator" =>
+            float dcHigh = ta.highest(high, i_length)
+            float dcLow = ta.lowest(low, i_length)
+            HCC.safeDiv(close - dcLow, dcHigh - dcLow, 0.0)
+        "ATR Ratio" =>
+            HCC.atrPercent(i_length, src)
+        "Historical Volatility" =>
+            HCC.realizedVolatility(src, i_length)
+        "Chaikin Volatility" =>
+            float hlEma = ta.ema(high - low, i_length)
+            100 * HCC.safeDiv(hlEma - hlEma[i_length], hlEma[i_length], 0.0)
+
+        // ── Statistical Oscillators ──
+        "Z-Score" =>
+            HCC.zScore(src, i_length)
+        "Robust Z-Score" =>
+            HCC.robustZScore(src, i_length)
+        "Percentile Rank" =>
+            HCC.percentileRank(src, i_length)
+        => na
+    result
+
+//====================================================================================================================//
+//-Normalization Layer------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+applyNorm(float raw, string method, int normLen, string detrendMa) =>
+    float result = switch method
+        "Z-Score" =>
+            HCC.zScore(raw, normLen)
+        "Robust Z-Score" =>
+            HCC.robustZScore(raw, normLen)
+        "Min-Max (0-100)" =>
+            HCC.rangePercent(raw, normLen)
+        "Min-Max (0-1)" =>
+            HCC.normalize(raw, normLen)
+        "Percentile Rank" =>
+            HCC.percentileRank(raw, normLen)
+        "Detrend (MA)" =>
+            raw - MA.selector(raw, normLen, detrendMa)
+        "Detrend (LinReg)" =>
+            raw - ta.linreg(raw, normLen, 0)
+        "Stochastic" =>
+            float lo = ta.lowest(raw, normLen)
+            float hi = ta.highest(raw, normLen)
+            100 * HCC.safeDiv(raw - lo, hi - lo, 0.0)
+        "Inverse Fisher" =>
+            float zs = HCC.zScore(raw, normLen) * 0.5
+            (math.exp(2 * zs) - 1) / (math.exp(2 * zs) + 1)
+        "Fisher Transform" =>
+            float n = HCC.normalize(raw, normLen) * 2 - 1
+            float clamped = HCC.clamp(n, -0.999, 0.999)
+            0.5 * math.log((1 + clamped) / (1 - clamped))
+        "Sigmoid" =>
+            float zSig = HCC.zScore(raw, normLen)
+            1.0 / (1.0 + math.exp(-zSig))
+        => raw
+    result
+
+//====================================================================================================================//
+//-Auto Level Detection-----------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+getAutoLevels(string oscType, string normMethod) =>
+    float ob = i_obLevel
+    float os = i_osLevel
+    float mid = i_midLevel
+
+    if i_autoLevels
+        if normMethod != "None"
+            switch normMethod
+                "Z-Score"          => ob := 2.0,    os := -2.0,  mid := 0.0
+                "Robust Z-Score"   => ob := 2.0,    os := -2.0,  mid := 0.0
+                "Min-Max (0-100)"  => ob := 80.0,   os := 20.0,  mid := 50.0
+                "Min-Max (0-1)"    => ob := 0.8,    os := 0.2,   mid := 0.5
+                "Percentile Rank"  => ob := 80.0,   os := 20.0,  mid := 50.0
+                "Stochastic"       => ob := 80.0,   os := 20.0,  mid := 50.0
+                "Inverse Fisher"   => ob := 0.5,    os := -0.5,  mid := 0.0
+                "Sigmoid"          => ob := 0.7,    os := 0.3,   mid := 0.5
+                "Fisher Transform" => ob := 2.0,    os := -2.0,  mid := 0.0
+                "Detrend (MA)"     => ob := 0.0,    os := 0.0,   mid := 0.0
+                "Detrend (LinReg)" => ob := 0.0,    os := 0.0,   mid := 0.0
+        else
+            switch oscType
+                "RSI"               => ob := 80.0,   os := 20.0,  mid := 50.0
+                "Stochastic %K"     => ob := 80.0,   os := 20.0,  mid := 50.0
+                "Stochastic %D"     => ob := 80.0,   os := 20.0,  mid := 50.0
+                "Stochastic RSI"    => ob := 80.0,   os := 20.0,  mid := 50.0
+                "MFI"               => ob := 80.0,   os := 20.0,  mid := 50.0
+                "Williams %R"       => ob := -20.0,  os := -80.0, mid := -50.0
+                "CCI"               => ob := 100.0,  os := -100.0, mid := 0.0
+                "CMO"               => ob := 50.0,   os := -50.0, mid := 0.0
+                "Aroon Oscillator"  => ob := 50.0,   os := -50.0, mid := 0.0
+                "SMI"               => ob := 40.0,   os := -40.0, mid := 0.0
+                "TSI"               => ob := 25.0,   os := -25.0, mid := 0.0
+                "Balance of Power"  => ob := 0.5,    os := -0.5,  mid := 0.0
+                "Bollinger %B"      => ob := 1.0,    os := 0.0,   mid := 0.5
+                "Donchian Oscillator" => ob := 0.8,  os := 0.2,   mid := 0.5
+                "Ultimate Oscillator" => ob := 70.0, os := 30.0,  mid := 50.0
+                "Percentile Rank"   => ob := 80.0,   os := 20.0,  mid := 50.0
+                "Z-Score"           => ob := 2.0,    os := -2.0,  mid := 0.0
+                "Robust Z-Score"    => ob := 2.0,    os := -2.0,  mid := 0.0
+                =>                     ob := 0.0,    os := 0.0,   mid := 0.0
+
+    [ob, os, mid]
+
+//====================================================================================================================//
+//-Calculation--------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+confirmedOffset = i_dataMode == 'Confirmed' ? 1 : 0
+
+calcNormalized() =>
+    float raw = calcOscillator(i_oscType, i_source)
+    applyNorm(raw, i_normMethod, i_normLen, i_detrendMa)
+
+float finalOsc = calcNormalized()[confirmedOffset]
+
+float signalLine = MA.selector(finalOsc, i_signalLen, i_signalMaType)
+
+[obLevel, osLevel, midLevel] = getAutoLevels(i_oscType, i_normMethod)
+
+//====================================================================================================================//
+//-Strategy Logic-----------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+bool goLong  = i_direction == "Long Only" or i_direction == "Long & Short"
+bool goShort = i_direction == "Short Only" or i_direction == "Long & Short"
+
+bool bullTrigger = switch i_signalMode
+    "Midline"     => ta.crossover(finalOsc, midLevel)
+    "Momentum"    => ta.crossover(finalOsc, obLevel)
+    "Signal Line" => ta.crossover(finalOsc, signalLine)
+bool bearTrigger = switch i_signalMode
+    "Midline"     => ta.crossunder(finalOsc, midLevel)
+    "Momentum"    => ta.crossunder(finalOsc, osLevel)
+    "Signal Line" => ta.crossunder(finalOsc, signalLine)
+
+if bullTrigger
+    if goLong
+        strategy.entry("Long", strategy.long)
+    if goShort
+        strategy.close("Short")
+if bearTrigger
+    if goLong
+        strategy.close("Long")
+    if goShort
+        strategy.entry("Short", strategy.short)
+
+//====================================================================================================================//
+//-Dashboard----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+float colorValue = na
+if i_normMethod == "Min-Max (0-100)" or i_normMethod == "Stochastic" or i_normMethod == "Percentile Rank"
+    colorValue := finalOsc
+else if i_normMethod == "Min-Max (0-1)"
+    colorValue := finalOsc * 100
+else if i_normMethod == "Sigmoid"
+    colorValue := finalOsc * 100
+else if i_oscType == "RSI" or i_oscType == "MFI" or i_oscType == "Stochastic %K" or i_oscType == "Stochastic %D" or i_oscType == "Stochastic RSI" or i_oscType == "Ultimate Oscillator" or i_oscType == "Percentile Rank"
+    colorValue := finalOsc
+else
+    colorValue := HCC.clamp(HCC.rescale(finalOsc, osLevel, obLevel, 0.0, 100.0), 0.0, 100.0)
+
+oscColor = CLR.rsiGradient(colorValue, i_colorTheme)
+
+dashPos = switch i_dashPosition
+    "Top Left"     => position.top_left
+    "Top Right"    => position.top_right
+    "Bottom Left"  => position.bottom_left
+    "Bottom Right" => position.bottom_right
+
+var table dashboard = table.new(dashPos, 2, 7, bgcolor = BG_COLOR, border_width = 1, frame_width = 1, border_color = BORDER_COLOR, frame_color = FRAME_COLOR)
+
+string statusText = finalOsc >= obLevel ? "Overbought" : finalOsc <= osLevel ? "Oversold" : finalOsc >= midLevel ? "Bullish" : "Bearish"
+color statusColor = finalOsc >= obLevel ? bearColor : finalOsc <= osLevel ? bullColor : finalOsc >= midLevel ? bullColor : bearColor
+
+if i_showDashboard
+    table.cell(dashboard, 0, 0, '⚜️ Oscillator Suite', text_color = TEXT_COLOR, bgcolor = color.new(oscColor, 70), text_halign = text.align_center)
+    table.cell(dashboard, 1, 0, '', bgcolor = color.new(oscColor, 70))
+
+    table.cell(dashboard, 0, 1, 'Oscillator', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 1, i_oscType, text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 2, 'Value', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 2, fmt(finalOsc, "#.##"), text_color = oscColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 3, 'Signal', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 3, fmt(signalLine, "#.##"), text_color = signedColor(finalOsc - signalLine), bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 4, 'Status', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 4, statusText, text_color = statusColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 5, 'Norm', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 5, i_normMethod, text_color = neutralColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 6, 'OB / OS', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 6, fmt(obLevel, "#.##") + ' / ' + fmt(osLevel, "#.##"), text_color = neutralColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+//====================================================================================================================//
+//-Backtest Table-----------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+BT.backtestTable(i_btOption, i_btPosition)
+
+equityCurve = i_curveType != "None" ? BT.curve(i_curveType) : na
+plot(equityCurve, 'Equity Curve', color = color.rgb(41, 98, 255), linewidth = 2)
+
+bool longEntry  = strategy.position_size > 0 and strategy.position_size[1] <= 0
+bool shortEntry = strategy.position_size < 0 and strategy.position_size[1] >= 0
+bool longExit   = strategy.position_size <= 0 and strategy.position_size[1] > 0
+bool shortExit  = strategy.position_size >= 0 and strategy.position_size[1] < 0
+bool inLong     = strategy.position_size > 0
+bool inShort    = strategy.position_size < 0
+color sigColor = longEntry ? bullColor : shortEntry ? bearColor : longExit ? bearColor : shortExit ? bullColor : inLong ? color.new(bullColor, 60) : inShort ? color.new(bearColor, 60) : color.new(color.gray, 80)
+plot(0, 'Signals', color = sigColor, style = plot.style_circles, linewidth = 3)
+
+//====================================================================================================================//
+//-Alerts-------------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+if ta.crossover(finalOsc, obLevel)
+    alert('{{ticker}} {{interval}} — Oscillator [NR] entered overbought', alert.freq_once_per_bar)
+if ta.crossunder(finalOsc, obLevel)
+    alert('{{ticker}} {{interval}} — Oscillator [NR] left overbought', alert.freq_once_per_bar)
+if ta.crossunder(finalOsc, osLevel)
+    alert('{{ticker}} {{interval}} — Oscillator [NR] entered oversold', alert.freq_once_per_bar)
+if ta.crossover(finalOsc, osLevel)
+    alert('{{ticker}} {{interval}} — Oscillator [NR] left oversold', alert.freq_once_per_bar)
+if ta.crossover(finalOsc, midLevel)
+    alert('{{ticker}} {{interval}} — Oscillator [NR] crossed above midline', alert.freq_once_per_bar)
+if ta.crossunder(finalOsc, midLevel)
+    alert('{{ticker}} {{interval}} — Oscillator [NR] crossed below midline', alert.freq_once_per_bar)
+if ta.crossover(finalOsc, signalLine)
+    alert('{{ticker}} {{interval}} — Oscillator [NR] crossed above signal', alert.freq_once_per_bar)
+if ta.crossunder(finalOsc, signalLine)
+    alert('{{ticker}} {{interval}} — Oscillator [NR] crossed below signal', alert.freq_once_per_bar)

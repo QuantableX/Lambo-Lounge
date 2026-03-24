@@ -77,6 +77,76 @@ vpShowPocLabel = input.bool(true, title='Show POC Label', group=vpGroupName, too
 vpMinOpacity = input.int(85, title='Min Opacity %', minval=50, maxval=98, group=vpGroupName, tooltip='Opacity for lowest volume bands (higher = more transparent)')
 vpMaxOpacity = input.int(30, title='Max Opacity %', minval=0, maxval=50, group=vpGroupName, tooltip='Opacity for highest volume bands (lower = more solid)')
 
+// ============================================================================
+// VWAP Inputs
+// ============================================================================
+var vwapGroupName = 'VWAP'
+enableVWAP = input.bool(false, title='Enable VWAP', group=vwapGroupName)
+vwapAnchor = input.string('Day', options=['Day', 'Week', 'Month'], title='Anchor Period', group=vwapGroupName)
+vwapShowBand1 = input.bool(true, 'Show 1 StdDev Band', group=vwapGroupName)
+vwapShowBand2 = input.bool(true, 'Show 2 StdDev Band', group=vwapGroupName)
+vwapShowBand3 = input.bool(false, 'Show 3 StdDev Band', group=vwapGroupName)
+vwapLineWidth = input.int(2, "VWAP Line Width", minval=1, maxval=4, group=vwapGroupName)
+vwapShowFill = input.bool(false, 'Show Band Fill', group=vwapGroupName)
+
+// ============================================================================
+// Volatility Envelope Inputs
+// ============================================================================
+var envGroupName = 'Volatility Envelope'
+enableEnvelope = input.bool(false, title='Enable Volatility Envelope', group=envGroupName)
+envType = input.string('Bollinger', options=['Bollinger', 'Keltner'], title='Type', group=envGroupName)
+envMaType = input.string('SMA', options=["SMA", "EMA", "WMA", "VWMA", "RMA", "HMA", "DEMA", "TEMA", "KAMA", "T3", "ALMA", "FRAMA", "VIDYA", "JMA", "MCGINLEY", "ZLEMA", "LSMA", "TMA", "SUPERSMOOTHER", "LAGUERRE"], title='Center MA Type', group=envGroupName)
+envLength = input.int(20, "Length", minval=1, group=envGroupName)
+envMult = input.float(2.0, "Multiplier", minval=0.1, step=0.1, group=envGroupName)
+envShowFill = input.bool(true, 'Show Fill', group=envGroupName)
+
+// ============================================================================
+// Order Blocks Inputs
+// ============================================================================
+var obGroupName = 'Order Blocks'
+enableOB = input.bool(false, title='Enable Order Blocks', group=obGroupName)
+obMaxCount = input.int(10, "Max Order Blocks", minval=1, maxval=30, group=obGroupName)
+obShowLabels = input.bool(true, 'Show OB Labels', group=obGroupName)
+obMitigationType = input.string('Wick', options=['Wick', 'Close'], title='Mitigation Type', group=obGroupName, tooltip='Wick = price wick touches zone. Close = candle closes inside zone.')
+
+// ============================================================================
+// Fair Value Gaps Inputs
+// ============================================================================
+var fvgGroupName = 'Fair Value Gaps'
+enableFVG = input.bool(false, title='Enable Fair Value Gaps', group=fvgGroupName)
+fvgMaxCount = input.int(15, "Max FVGs", minval=5, maxval=50, group=fvgGroupName)
+fvgMinATRMult = input.float(0.0, "Min Gap Size (ATR x)", minval=0.0, step=0.1, group=fvgGroupName, tooltip='Minimum gap size as ATR multiplier. 0 = show all.')
+fvgFillAction = input.string('Remove', options=['Remove', 'Dim', 'Keep'], title='When Filled', group=fvgGroupName)
+fvgShowMidline = input.bool(false, 'Show FVG Midline (CE)', group=fvgGroupName, tooltip='Consequent Encroachment — the 50% level of the FVG')
+
+// ============================================================================
+// Displacement Candles Inputs
+// ============================================================================
+var dispGroupName = 'Displacement Candles'
+enableDisp = input.bool(false, title='Enable Displacement Detection', group=dispGroupName)
+dispMultiplier = input.float(2.0, "Body Size Multiplier", minval=1.0, maxval=5.0, step=0.1, group=dispGroupName, tooltip='Candle body must be this many times larger than average body')
+dispLookback = input.int(20, "Average Body Lookback", minval=5, maxval=100, group=dispGroupName)
+dispShowMarkers = input.bool(true, 'Show Markers', group=dispGroupName)
+dispHighlightBars = input.bool(false, 'Highlight Bar Color', group=dispGroupName)
+
+
+// ============================================================================
+// Swing Failure Pattern Inputs
+// ============================================================================
+var sfpGroupName = 'Swing Failure Pattern'
+enableSFP = input.bool(false, title='Enable SFP Detection', group=sfpGroupName)
+sfpMaxLabels = input.int(10, "Max Labels", minval=1, maxval=30, group=sfpGroupName)
+
+// ============================================================================
+// ATR Trailing Stop Inputs
+// ============================================================================
+var atrGroupName = 'ATR Trailing Stop'
+enableATRStop = input.bool(false, title='Enable ATR Trailing Stop', group=atrGroupName)
+atrLength = input.int(14, "ATR Length", minval=1, maxval=50, group=atrGroupName)
+atrMult = input.float(2.0, "ATR Multiplier", minval=0.5, maxval=5.0, step=0.1, group=atrGroupName)
+atrShowFill = input.bool(true, 'Show Fill to Price', group=atrGroupName)
+
+
 // Rules For Up and Down MA trends
 MA_UpTrend = maS >= maB
 MA_DownTrend = maS < maB
@@ -422,3 +492,430 @@ if barstate.islast and enableVolumeProfile
         if vpShowPocLabel
             string volText = pocVol >= 1000000 ? str.tostring(pocVol / 1000000, '#.###') + 'M' : pocVol >= 1000 ? str.tostring(pocVol / 1000, '#.###') + 'K' : str.tostring(pocVol, '#.#')
             vpPocLabel := label.new(vpRightEdge, pocPrice, 'POC ' + volText, style=label.style_label_left, color=color.new(#424242, 20), textcolor=color.white, size=size.small)
+
+// ============================================================================
+// Market Structure Detection (BOS / CHoCH)
+// ============================================================================
+var msGroupName = 'Market Structure'
+enableMS = input.bool(true, title='Enable Market Structure', group=msGroupName)
+msLength = input.int(5, 'Pivot Lookback', minval=1, maxval=50, group=msGroupName, tooltip='Bars for swing detection. Lower = more signals, higher = more significant swings.')
+msShowLabels = input.bool(true, 'Show Swing Labels', group=msGroupName, tooltip='Display HH, HL, LH, LL at swing points')
+msShowBOS = input.bool(true, 'Show BOS', group=msGroupName, tooltip='Break of Structure — trend continuation')
+msShowCHoCH = input.bool(true, 'Show CHoCH', group=msGroupName, tooltip='Change of Character — potential reversal')
+msLineStyle = input.string("Dashed", options=["Dashed", "Dotted", "Solid"], title="Line Style", group=msGroupName)
+
+msBullColor = CLR.bullColor(colorTheme)
+msBearColor = CLR.bearColor(colorTheme)
+
+msLineStyleResolved = switch msLineStyle
+    "Solid" => line.style_solid
+    "Dotted" => line.style_dotted
+    "Dashed" => line.style_dashed
+
+msPivotHi = ta.pivothigh(high, msLength, msLength)
+msPivotLo = ta.pivotlow(low, msLength, msLength)
+
+// State: 1 = bullish, -1 = bearish, 0 = initial
+var int msState = 0
+var float msLastSH = na
+var float msPrevSH = na
+var int msLastSHBar = na
+var float msLastSL = na
+var float msPrevSL = na
+var int msLastSLBar = na
+var bool msSHBroken = false
+var bool msSLBroken = false
+
+// Track BOS/CHoCH events for Order Block detection
+var bool msNewBullBOS = false
+var bool msNewBearBOS = false
+var bool msNewBullCHoCH = false
+var bool msNewBearCHoCH = false
+
+msShowCandles = input.bool(true, 'Structure Candle Coloring', group=msGroupName, tooltip='Color candles based on current market structure state')
+
+// Reset per-bar event flags
+msNewBullBOS := false
+msNewBearBOS := false
+msNewBullCHoCH := false
+msNewBearCHoCH := false
+
+if enableMS
+    // New swing high confirmed
+    if not na(msPivotHi)
+        msPrevSH := msLastSH
+        msLastSH := high[msLength]
+        msLastSHBar := bar_index - msLength
+        msSHBroken := false
+
+        if not na(msPrevSH) and msShowLabels
+            isHH = msLastSH > msPrevSH
+            label.new(bar_index - msLength, msLastSH, isHH ? "HH" : "LH", style=label.style_label_down, color=color.new(isHH ? msBullColor : msBearColor, 80), textcolor=isHH ? msBullColor : msBearColor, size=size.tiny)
+
+    // New swing low confirmed
+    if not na(msPivotLo)
+        msPrevSL := msLastSL
+        msLastSL := low[msLength]
+        msLastSLBar := bar_index - msLength
+        msSLBroken := false
+
+        if not na(msPrevSL) and msShowLabels
+            isHL = msLastSL > msPrevSL
+            label.new(bar_index - msLength, msLastSL, isHL ? "HL" : "LL", style=label.style_label_up, color=color.new(isHL ? msBullColor : msBearColor, 80), textcolor=isHL ? msBullColor : msBearColor, size=size.tiny)
+
+    // Break above swing high
+    if not na(msLastSH) and not msSHBroken and close > msLastSH
+        msSHBroken := true
+        if msState == 0
+            msState := 1
+        else if msState == -1
+            if msShowCHoCH
+                line.new(msLastSHBar, msLastSH, bar_index, msLastSH, color=msBullColor, style=msLineStyleResolved, width=1)
+                label.new(int(math.avg(msLastSHBar, bar_index)), msLastSH, "CHoCH", style=label.style_label_down, color=color.new(msBullColor, 70), textcolor=msBullColor, size=size.tiny)
+            msNewBullCHoCH := true
+            msState := 1
+        else
+            if msShowBOS
+                line.new(msLastSHBar, msLastSH, bar_index, msLastSH, color=msBullColor, style=msLineStyleResolved, width=1)
+                label.new(int(math.avg(msLastSHBar, bar_index)), msLastSH, "BOS", style=label.style_label_down, color=color.new(msBullColor, 70), textcolor=msBullColor, size=size.tiny)
+            msNewBullBOS := true
+
+    // Break below swing low
+    if not na(msLastSL) and not msSLBroken and close < msLastSL
+        msSLBroken := true
+        if msState == 0
+            msState := -1
+        else if msState == 1
+            if msShowCHoCH
+                line.new(msLastSLBar, msLastSL, bar_index, msLastSL, color=msBearColor, style=msLineStyleResolved, width=1)
+                label.new(int(math.avg(msLastSLBar, bar_index)), msLastSL, "CHoCH", style=label.style_label_up, color=color.new(msBearColor, 70), textcolor=msBearColor, size=size.tiny)
+            msNewBearCHoCH := true
+            msState := -1
+        else
+            if msShowBOS
+                line.new(msLastSLBar, msLastSL, bar_index, msLastSL, color=msBearColor, style=msLineStyleResolved, width=1)
+                label.new(int(math.avg(msLastSLBar, bar_index)), msLastSL, "BOS", style=label.style_label_up, color=color.new(msBearColor, 70), textcolor=msBearColor, size=size.tiny)
+            msNewBearBOS := true
+
+// Market Structure Candle Coloring
+msCandleBull = enableMS and msShowCandles and msState == 1
+msCandleBear = enableMS and msShowCandles and msState == -1
+msCandleColor = msCandleBull ? msBullColor : msCandleBear ? msBearColor : na
+
+// ============================================================================
+// Order Blocks
+// ============================================================================
+var box[] obBoxes = array.new_box(0)
+var int[] obDirs = array.new_int(0)
+var float[] obTops = array.new_float(0)
+var float[] obBottoms = array.new_float(0)
+var label[] obLabels = array.new_label(0)
+var bool[] obMitigated = array.new_bool(0)
+
+f_manage_ob_limit() =>
+    while array.size(obBoxes) > obMaxCount
+        box.delete(array.shift(obBoxes))
+        array.shift(obDirs)
+        array.shift(obTops)
+        array.shift(obBottoms)
+        label.delete(array.shift(obLabels))
+        array.shift(obMitigated)
+
+if enableOB and enableMS
+    // Bullish OB: last bearish candle before bullish BOS/CHoCH
+    if msNewBullBOS or msNewBullCHoCH
+        int obBar = na
+        float obTop = na
+        float obBottom = na
+        for i = 1 to math.min(msLength * 3, 50)
+            if i <= bar_index and close[i] < open[i]
+                obBar := bar_index - i
+                obTop := open[i]
+                obBottom := close[i]
+                break
+        if not na(obBar)
+            box obBox = box.new(obBar, obTop, bar_index, obBottom, bgcolor=CLR.bullColor(colorTheme, 85), border_color=CLR.bullColor(colorTheme, 50), border_width=1)
+            label obLbl = na
+            if obShowLabels
+                obLbl := label.new(obBar, obTop, "OB", style=label.style_label_down, color=color.new(msBullColor, 80), textcolor=msBullColor, size=size.tiny)
+            array.push(obBoxes, obBox)
+            array.push(obDirs, 1)
+            array.push(obTops, obTop)
+            array.push(obBottoms, obBottom)
+            array.push(obLabels, obLbl)
+            array.push(obMitigated, false)
+            f_manage_ob_limit()
+
+    // Bearish OB: last bullish candle before bearish BOS/CHoCH
+    if msNewBearBOS or msNewBearCHoCH
+        int obBar = na
+        float obTop = na
+        float obBottom = na
+        for i = 1 to math.min(msLength * 3, 50)
+            if i <= bar_index and close[i] > open[i]
+                obBar := bar_index - i
+                obTop := close[i]
+                obBottom := open[i]
+                break
+        if not na(obBar)
+            box obBox = box.new(obBar, obTop, bar_index, obBottom, bgcolor=CLR.bearColor(colorTheme, 85), border_color=CLR.bearColor(colorTheme, 50), border_width=1)
+            label obLbl = na
+            if obShowLabels
+                obLbl := label.new(obBar, obTop, "OB", style=label.style_label_down, color=color.new(msBearColor, 80), textcolor=msBearColor, size=size.tiny)
+            array.push(obBoxes, obBox)
+            array.push(obDirs, -1)
+            array.push(obTops, obTop)
+            array.push(obBottoms, obBottom)
+            array.push(obLabels, obLbl)
+            array.push(obMitigated, false)
+            f_manage_ob_limit()
+
+// Manage OB mitigation and extension
+if enableOB and array.size(obBoxes) > 0
+    for i = array.size(obBoxes) - 1 to 0
+        if not array.get(obMitigated, i)
+            box.set_right(array.get(obBoxes, i), bar_index)
+            float top = array.get(obTops, i)
+            float bot = array.get(obBottoms, i)
+            int dir = array.get(obDirs, i)
+            float mitigationPrice = obMitigationType == 'Close' ? close : (dir == 1 ? low : high)
+            bool mitigated = dir == 1 ? mitigationPrice <= bot : mitigationPrice >= top
+            if mitigated
+                array.set(obMitigated, i, true)
+                box.set_bgcolor(array.get(obBoxes, i), color.new(color.gray, 95))
+                box.set_border_color(array.get(obBoxes, i), color.new(color.gray, 80))
+
+// ============================================================================
+// Fair Value Gaps (FVG)
+// ============================================================================
+var box[] fvgBoxes = array.new_box(0)
+var line[] fvgMidlines = array.new_line(0)
+var int[] fvgDirs = array.new_int(0)
+var float[] fvgTops = array.new_float(0)
+var float[] fvgBottoms = array.new_float(0)
+var bool[] fvgFilled = array.new_bool(0)
+
+f_manage_fvg_limit() =>
+    while array.size(fvgBoxes) > fvgMaxCount
+        box.delete(array.shift(fvgBoxes))
+        if array.size(fvgMidlines) > 0
+            line.delete(array.shift(fvgMidlines))
+        array.shift(fvgDirs)
+        array.shift(fvgTops)
+        array.shift(fvgBottoms)
+        array.shift(fvgFilled)
+
+fvgATR = ta.atr(14)
+
+if enableFVG and bar_index > 2
+    float fvgMinSize = fvgMinATRMult * fvgATR
+
+    // Bullish FVG: candle[0] low > candle[2] high (gap up)
+    bool bullFVG = low > high[2] and (low - high[2]) >= fvgMinSize
+    // Bearish FVG: candle[0] high < candle[2] low (gap down)
+    bool bearFVG = high < low[2] and (low[2] - high) >= fvgMinSize
+
+    if bullFVG
+        float fTop = low
+        float fBot = high[2]
+        box fvgBox = box.new(bar_index - 1, fTop, bar_index, fBot, bgcolor=CLR.bullColor(colorTheme, 85), border_color=CLR.bullColor(colorTheme, 60), border_width=1)
+        line fvgMid = na
+        if fvgShowMidline
+            fvgMid := line.new(bar_index - 1, (fTop + fBot) / 2, bar_index, (fTop + fBot) / 2, color=CLR.bullColor(colorTheme, 50), style=line.style_dotted, width=1)
+        array.push(fvgBoxes, fvgBox)
+        array.push(fvgMidlines, fvgMid)
+        array.push(fvgDirs, 1)
+        array.push(fvgTops, fTop)
+        array.push(fvgBottoms, fBot)
+        array.push(fvgFilled, false)
+        f_manage_fvg_limit()
+
+    if bearFVG
+        float fTop = low[2]
+        float fBot = high
+        box fvgBox = box.new(bar_index - 1, fTop, bar_index, fBot, bgcolor=CLR.bearColor(colorTheme, 85), border_color=CLR.bearColor(colorTheme, 60), border_width=1)
+        line fvgMid = na
+        if fvgShowMidline
+            fvgMid := line.new(bar_index - 1, (fTop + fBot) / 2, bar_index, (fTop + fBot) / 2, color=CLR.bearColor(colorTheme, 50), style=line.style_dotted, width=1)
+        array.push(fvgBoxes, fvgBox)
+        array.push(fvgMidlines, fvgMid)
+        array.push(fvgDirs, -1)
+        array.push(fvgTops, fTop)
+        array.push(fvgBottoms, fBot)
+        array.push(fvgFilled, false)
+        f_manage_fvg_limit()
+
+// Manage FVG fill tracking and extension
+if enableFVG and array.size(fvgBoxes) > 0
+    for i = array.size(fvgBoxes) - 1 to 0
+        if not array.get(fvgFilled, i)
+            box.set_right(array.get(fvgBoxes, i), bar_index)
+            if not na(array.get(fvgMidlines, i))
+                line.set_x2(array.get(fvgMidlines, i), bar_index)
+            float top = array.get(fvgTops, i)
+            float bot = array.get(fvgBottoms, i)
+            int dir = array.get(fvgDirs, i)
+            // Bullish FVG filled when price drops into the gap; bearish when price rises into it
+            bool filled = dir == 1 ? close <= bot : close >= top
+            if filled
+                array.set(fvgFilled, i, true)
+                if fvgFillAction == 'Remove'
+                    box.delete(array.get(fvgBoxes, i))
+                    if not na(array.get(fvgMidlines, i))
+                        line.delete(array.get(fvgMidlines, i))
+                else if fvgFillAction == 'Dim'
+                    box.set_bgcolor(array.get(fvgBoxes, i), color.new(color.gray, 95))
+                    box.set_border_color(array.get(fvgBoxes, i), color.new(color.gray, 90))
+
+// ============================================================================
+// Displacement / Momentum Candles
+// ============================================================================
+dispBodySize = math.abs(close - open)
+dispAvgBody = ta.sma(math.abs(close[1] - open[1]), dispLookback)
+dispIsBull = close > open
+dispIsBear = close < open
+dispDetected = enableDisp and not na(dispAvgBody) and dispAvgBody > 0 and dispBodySize >= dispAvgBody * dispMultiplier
+dispBullish = dispDetected and dispIsBull
+dispBearish = dispDetected and dispIsBear
+
+plotshape(dispBullish and dispShowMarkers, 'Displacement Up', shape.diamond, location.belowbar, CLR.bullColor(colorTheme), size=size.tiny, display=display.all - display.status_line, editable=false)
+plotshape(dispBearish and dispShowMarkers, 'Displacement Down', shape.diamond, location.abovebar, CLR.bearColor(colorTheme), size=size.tiny, display=display.all - display.status_line, editable=false)
+
+// ============================================================================
+// VWAP with Standard Deviation Bands
+// ============================================================================
+vwapAnchorTf = vwapAnchor == 'Day' ? 'D' : vwapAnchor == 'Week' ? 'W' : 'M'
+vwapIsNewPeriod = ta.change(time(vwapAnchorTf)) != 0
+
+var float vwapSumPV = 0.0
+var float vwapSumV = 0.0
+var float vwapSumPV2 = 0.0
+
+if vwapIsNewPeriod
+    vwapSumPV := 0.0
+    vwapSumV := 0.0
+    vwapSumPV2 := 0.0
+
+vwapTypical = hlc3
+vwapSumPV += vwapTypical * nz(volume)
+vwapSumV += nz(volume)
+vwapSumPV2 += vwapTypical * vwapTypical * nz(volume)
+
+vwapValue = vwapSumV != 0 ? vwapSumPV / vwapSumV : hlc3
+vwapVariance = vwapSumV != 0 ? math.max(0.0, vwapSumPV2 / vwapSumV - vwapValue * vwapValue) : 0.0
+vwapStdDev = math.sqrt(vwapVariance)
+
+vwapUpper1 = vwapValue + vwapStdDev
+vwapLower1 = vwapValue - vwapStdDev
+vwapUpper2 = vwapValue + vwapStdDev * 2
+vwapLower2 = vwapValue - vwapStdDev * 2
+vwapUpper3 = vwapValue + vwapStdDev * 3
+vwapLower3 = vwapValue - vwapStdDev * 3
+
+vwapColor = color.new(#FF9800, 0)
+vwapBandColor = color.new(#FF9800, 70)
+
+pVWAP = plot(enableVWAP ? vwapValue : na, 'VWAP', vwapColor, linewidth=vwapLineWidth, display=display.pane)
+pVU1 = plot(enableVWAP and vwapShowBand1 ? vwapUpper1 : na, 'VWAP +1', vwapBandColor, linewidth=1, display=display.pane)
+pVL1 = plot(enableVWAP and vwapShowBand1 ? vwapLower1 : na, 'VWAP -1', vwapBandColor, linewidth=1, display=display.pane)
+pVU2 = plot(enableVWAP and vwapShowBand2 ? vwapUpper2 : na, 'VWAP +2', vwapBandColor, linewidth=1, display=display.pane)
+pVL2 = plot(enableVWAP and vwapShowBand2 ? vwapLower2 : na, 'VWAP -2', vwapBandColor, linewidth=1, display=display.pane)
+pVU3 = plot(enableVWAP and vwapShowBand3 ? vwapUpper3 : na, 'VWAP +3', vwapBandColor, linewidth=1, display=display.pane)
+pVL3 = plot(enableVWAP and vwapShowBand3 ? vwapLower3 : na, 'VWAP -3', vwapBandColor, linewidth=1, display=display.pane)
+
+fill(pVU1, pVL1, enableVWAP and vwapShowFill and vwapShowBand1 ? color.new(#FF9800, 92) : na, title='VWAP Band 1 Fill')
+fill(pVU2, pVL2, enableVWAP and vwapShowFill and vwapShowBand2 ? color.new(#FF9800, 95) : na, title='VWAP Band 2 Fill')
+fill(pVU3, pVL3, enableVWAP and vwapShowFill and vwapShowBand3 ? color.new(#FF9800, 97) : na, title='VWAP Band 3 Fill')
+
+// ============================================================================
+// Volatility Envelope (Bollinger Bands / Keltner Channels)
+// ============================================================================
+envCenter = MA.selector(close, envLength, envMaType)
+envATR = ta.atr(envLength)
+envStdDev = ta.stdev(close, envLength)
+
+envBasis = envType == 'Bollinger' ? envStdDev : envATR
+envUpper = envCenter + envBasis * envMult
+envLower = envCenter - envBasis * envMult
+
+envUpColor = CLR.bearColor(colorTheme, 60)
+envLoColor = CLR.bullColor(colorTheme, 60)
+envMidColor = color.new(color.gray, 30)
+
+pEnvUp = plot(enableEnvelope ? envUpper : na, 'Envelope Upper', envUpColor, linewidth=1, display=display.pane)
+pEnvMid = plot(enableEnvelope ? envCenter : na, 'Envelope Center', envMidColor, linewidth=1, style=plot.style_line, display=display.pane)
+pEnvLo = plot(enableEnvelope ? envLower : na, 'Envelope Lower', envLoColor, linewidth=1, display=display.pane)
+fill(pEnvUp, pEnvLo, enableEnvelope and envShowFill ? color.new(color.gray, 92) : na, title='Envelope Fill')
+
+
+
+// ============================================================================
+// Swing Failure Pattern (SFP)
+// ============================================================================
+var label[] sfpLabels = array.new_label(0)
+
+f_manage_sfp_labels() =>
+    while array.size(sfpLabels) > sfpMaxLabels
+        label.delete(array.shift(sfpLabels))
+
+if enableSFP and enableMS
+    // Bearish SFP: wick above swing high but close below it
+    if not na(msLastSH) and high > msLastSH and close < msLastSH and close < open
+        label sfpLbl = label.new(bar_index, high, "SFP", style=label.style_label_down, color=color.new(msBearColor, 50), textcolor=msBearColor, size=size.tiny)
+        array.push(sfpLabels, sfpLbl)
+        f_manage_sfp_labels()
+
+    // Bullish SFP: wick below swing low but close above it
+    if not na(msLastSL) and low < msLastSL and close > msLastSL and close > open
+        label sfpLbl = label.new(bar_index, low, "SFP", style=label.style_label_up, color=color.new(msBullColor, 50), textcolor=msBullColor, size=size.tiny)
+        array.push(sfpLabels, sfpLbl)
+        f_manage_sfp_labels()
+
+// ============================================================================
+// ATR Trailing Stop
+// ============================================================================
+atrVal = ta.atr(atrLength)
+var float atrStop = na
+var int atrDir = 0
+
+if enableATRStop
+    float longStop = close - atrVal * atrMult
+    float shortStop = close + atrVal * atrMult
+
+    if na(atrStop)
+        atrStop := close > ma50 ? longStop : shortStop
+        atrDir := close > ma50 ? 1 : -1
+    else
+        if atrDir == 1
+            atrStop := math.max(atrStop, longStop)
+            if close < atrStop
+                atrDir := -1
+                atrStop := shortStop
+        else
+            atrStop := math.min(atrStop, shortStop)
+            if close > atrStop
+                atrDir := 1
+                atrStop := longStop
+
+atrStopColor = atrDir == 1 ? CLR.bullColor(colorTheme) : CLR.bearColor(colorTheme)
+pATRStop = plot(enableATRStop ? atrStop : na, 'ATR Stop', atrStopColor, linewidth=2, style=plot.style_linebr, display=display.pane)
+pATRClose = plot(enableATRStop ? close : na, 'ATR Close Ref', na, display=display.none, editable=false)
+fill(pATRStop, pATRClose, enableATRStop and atrShowFill ? color.new(atrStopColor, 90) : na, title='ATR Stop Fill')
+
+
+// ============================================================================
+// Displacement Bar Coloring (applied after all other barcolor logic)
+// ============================================================================
+dispBarColor = dispHighlightBars and dispBullish ? CLR.bullColor(colorTheme) : dispHighlightBars and dispBearish ? CLR.bearColor(colorTheme) : na
+finalBarColor = not na(dispBarColor) ? dispBarColor : msCandleColor
+barcolor(finalBarColor)
+
+// ============================================================================
+// Alerts — New Features
+// ============================================================================
+alertcondition(msNewBullBOS, title='Bullish BOS', message='Bullish Break of Structure — {{ticker}} — {{interval}}')
+alertcondition(msNewBearBOS, title='Bearish BOS', message='Bearish Break of Structure — {{ticker}} — {{interval}}')
+alertcondition(msNewBullCHoCH, title='Bullish CHoCH', message='Bullish Change of Character — {{ticker}} — {{interval}}')
+alertcondition(msNewBearCHoCH, title='Bearish CHoCH', message='Bearish Change of Character — {{ticker}} — {{interval}}')
+alertcondition(dispBullish, title='Bullish Displacement', message='Bullish Displacement Candle — {{ticker}} — {{interval}}')
+alertcondition(dispBearish, title='Bearish Displacement', message='Bearish Displacement Candle — {{ticker}} — {{interval}}')

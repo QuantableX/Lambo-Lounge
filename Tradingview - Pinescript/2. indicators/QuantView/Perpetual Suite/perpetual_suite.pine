@@ -1,0 +1,206 @@
+// This Pine Script(TM) code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// (c) TheTradingSpiderMan
+
+//====================================================================================================================//
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//@version=6
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//====================================================================================================================//
+
+import TheTradingSpiderMan/MovingAverages/1 as MA
+import TheTradingSpiderMan/ColorsLibrary/2 as CLR
+
+//====================================================================================================================//
+//-Init---------------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+indicator(title = '⚜️ 𝐏𝐞𝐫𝐩𝐞𝐭𝐮𝐚𝐥 𝐒𝐮𝐢𝐭𝐞 ⚜️', overlay = true, max_labels_count = 500)
+
+//====================================================================================================================//
+//-Constants----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+BG_COLOR        = color.rgb(0, 0, 0)
+BORDER_COLOR    = color.rgb(30, 30, 30)
+FRAME_COLOR     = color.rgb(35, 35, 35)
+TEXT_COLOR       = color.white
+
+GROUP_GENERAL    = '⚜️ 𝐆𝐞𝐧𝐞𝐫𝐚𝐥 𝐒𝐞𝐭𝐭𝐢𝐧𝐠𝐬 ⚜️'
+GROUP_MA         = '⚜️ 𝐌𝐨𝐯𝐢𝐧𝐠 𝐀𝐯𝐞𝐫𝐚𝐠𝐞𝐬 ⚜️'
+GROUP_VISUAL     = '⚜️ 𝐕𝐢𝐬𝐮𝐚𝐥 ⚜️'
+GROUP_DASHBOARD  = '⚜️ 𝐃𝐚𝐬𝐡𝐛𝐨𝐚𝐫𝐝 ⚜️'
+GROUP_COLORS     = '⚜️ 𝐂𝐨𝐥𝐨𝐫𝐬 ⚜️'
+
+//====================================================================================================================//
+//-Settings-----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+// General
+i_mode     = input.string('Single', 'Mode', options = ['Single', 'Double'], group = GROUP_GENERAL, tooltip = 'Single: Price above MA = Bullish, Price below MA = Bearish\nDouble: Fast MA crosses above Slow MA = Bullish, crosses below = Bearish')
+i_dataMode = input.string('Live', 'Data Mode', options = ['Live', 'Confirmed'], group = GROUP_GENERAL, tooltip = 'Live: Real-time data\nConfirmed: Closed bars only (no repainting)')
+i_source   = input.source(close, 'Source', group = GROUP_GENERAL)
+
+// MA / Fast MA
+i_maType = input.string('EMA', 'MA Type', options = [
+     'SMA', 'EMA', 'WMA', 'VWMA', 'RMA', 'SMMA', 'SWMA',
+     'HMA', 'EHMA',
+     'DEMA', 'TEMA', 'TMA', 'T3', 'TWMA', 'SWWMA', 'TRIXSMOOTH',
+     'ZLEMA', 'LSMA', 'EPMA', 'ILRS',
+     'KAMA', 'FRAMA', 'VIDYA', 'VMA', 'VAMA', 'RVMA', 'APEXMA',
+     'SUPERSMOOTHER', 'BUTTERWORTH2', 'BUTTERWORTH3', 'INSTANTTREND', 'EDSMA',
+     'LAGUERRE', 'ADAPTIVELAGUERRE',
+     'ALMA', 'SINWMA', 'GWMA', 'NMA',
+     'JMA', 'MCGINLEY', 'CORAL',
+     'MEDIANMA', 'GMA', 'HARMONICMA', 'TRIMMEDMA',
+     'EVWMA',
+     'HWMA', 'GDEMA', 'REMA', 'MODULARFILTER', 'RMT', 'QRMA', 'WILDERSMOOTH',
+     'LEOMA', 'AHRENSMA', 'RUNNINGMA', 'PPOMA', 'MAMA', 'FAMAVAL', 'FISHERMA', 'CMA'
+     ], group = GROUP_MA, tooltip = 'Single Mode: The MA to compare price against\nDouble Mode: The Fast MA')
+i_maLen = input.int(21, 'MA Length', minval = 1, group = GROUP_MA)
+
+// Slow MA (Double mode)
+i_slowMaType = input.string('SMA', 'Slow MA Type', options = [
+     'SMA', 'EMA', 'WMA', 'VWMA', 'RMA', 'SMMA', 'SWMA',
+     'HMA', 'EHMA',
+     'DEMA', 'TEMA', 'TMA', 'T3', 'TWMA', 'SWWMA', 'TRIXSMOOTH',
+     'ZLEMA', 'LSMA', 'EPMA', 'ILRS',
+     'KAMA', 'FRAMA', 'VIDYA', 'VMA', 'VAMA', 'RVMA', 'APEXMA',
+     'SUPERSMOOTHER', 'BUTTERWORTH2', 'BUTTERWORTH3', 'INSTANTTREND', 'EDSMA',
+     'LAGUERRE', 'ADAPTIVELAGUERRE',
+     'ALMA', 'SINWMA', 'GWMA', 'NMA',
+     'JMA', 'MCGINLEY', 'CORAL',
+     'MEDIANMA', 'GMA', 'HARMONICMA', 'TRIMMEDMA',
+     'EVWMA',
+     'HWMA', 'GDEMA', 'REMA', 'MODULARFILTER', 'RMT', 'QRMA', 'WILDERSMOOTH',
+     'LEOMA', 'AHRENSMA', 'RUNNINGMA', 'PPOMA', 'MAMA', 'FAMAVAL', 'FISHERMA', 'CMA'
+     ], group = GROUP_MA, tooltip = 'Only used in Double Mode — the Slow MA for crossover signals')
+i_slowMaLen = input.int(50, 'Slow MA Length', minval = 1, group = GROUP_MA)
+
+// Visual
+i_showFill    = input.bool(true, 'Ribbon Fill', group = GROUP_VISUAL, tooltip = 'Single: Fill between price and MA\nDouble: Fill between Fast and Slow MA')
+i_fillTransp  = input.int(85, 'Fill Transparency', minval = 0, maxval = 100, group = GROUP_VISUAL)
+i_showSignals = input.bool(true, 'Show Cross Signals', group = GROUP_VISUAL)
+i_barColor    = input.bool(false, 'Bar Coloring', group = GROUP_VISUAL)
+i_bgColor     = input.bool(false, 'Background Coloring', group = GROUP_VISUAL)
+i_lineWidth   = input.int(2, 'MA Line Width', minval = 1, maxval = 5, group = GROUP_VISUAL)
+
+// Dashboard
+i_showDashboard = input.bool(true, 'Show Dashboard', group = GROUP_DASHBOARD)
+i_dashPosition  = input.string('Top Right', 'Position', options = ['Top Left', 'Top Right', 'Bottom Left', 'Bottom Right'], group = GROUP_DASHBOARD)
+
+// Colors
+i_colorTheme = input.string('DEFAULT', 'Color Theme', options = ['DEFAULT', 'MONO', 'VAPOR', 'NEON', 'OCEAN', 'SUNSET', 'FOREST', 'CANDY', 'FIRE', 'ICE'], group = GROUP_COLORS)
+
+//====================================================================================================================//
+//-Color Setup--------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+bullColor    = CLR.bullColor(i_colorTheme)
+bearColor    = CLR.bearColor(i_colorTheme)
+neutralColor = CLR.defaultNeutral()
+
+//====================================================================================================================//
+//-Helper Functions---------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+fmt(float value, string pattern = "#.####") =>
+    na(value) ? "—" : str.tostring(value, pattern)
+
+//====================================================================================================================//
+//-Calculation--------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+confirmedOffset = i_dataMode == 'Confirmed' ? 1 : 0
+
+// Compute MAs
+float maFast = MA.selector(i_source, i_maLen, i_maType)[confirmedOffset]
+float maSlow = MA.selector(i_source, i_slowMaLen, i_slowMaType)[confirmedOffset]
+float src    = i_source[confirmedOffset]
+
+// Trend Logic
+bool isSingleMode = i_mode == 'Single'
+bool isBullish    = isSingleMode ? src > maFast : maFast > maSlow
+
+// Signal Detection
+bool bullSignal = isSingleMode ? ta.crossover(src, maFast) : ta.crossover(maFast, maSlow)
+bool bearSignal = isSingleMode ? ta.crossunder(src, maFast) : ta.crossunder(maFast, maSlow)
+
+// Trend Color
+trendColor = isBullish ? bullColor : bearColor
+
+//====================================================================================================================//
+//-Visual Output------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+// Plot MAs
+pFast = plot(maFast, 'MA / Fast MA', color = trendColor, linewidth = i_lineWidth)
+pSlow = plot(not isSingleMode ? maSlow : na, 'Slow MA', color = trendColor, linewidth = i_lineWidth, style = plot.style_line)
+
+// Fill reference for Single mode (invisible source line)
+pSrc = plot(isSingleMode ? src : na, 'Source', display = display.none)
+
+// Ribbon Fill
+fill(pFast, pSrc,  color = isSingleMode and i_showFill ? color.new(trendColor, i_fillTransp) : na, title = 'Single Fill')
+fill(pFast, pSlow, color = not isSingleMode and i_showFill ? color.new(trendColor, i_fillTransp) : na, title = 'Double Fill')
+
+// Cross Signals
+plotshape(i_showSignals and bullSignal, 'Bullish Signal', shape.triangleup, location.belowbar, bullColor, size = size.small)
+plotshape(i_showSignals and bearSignal, 'Bearish Signal', shape.triangledown, location.abovebar, bearColor, size = size.small)
+
+// Bar Coloring
+barcolor(i_barColor ? trendColor : na)
+
+// Background Coloring
+bgcolor(i_bgColor ? color.new(trendColor, 92) : na, title = 'Trend Background')
+
+//====================================================================================================================//
+//-Dashboard----------------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+dashPos = switch i_dashPosition
+    "Top Left"     => position.top_left
+    "Top Right"    => position.top_right
+    "Bottom Left"  => position.bottom_left
+    "Bottom Right" => position.bottom_right
+
+var table dashboard = table.new(dashPos, 2, 8, bgcolor = BG_COLOR, border_width = 1, frame_width = 1, border_color = BORDER_COLOR, frame_color = FRAME_COLOR)
+
+string trendText  = isBullish ? "Bullish" : "Bearish"
+string modeText   = isSingleMode ? "Price vs MA" : "Crossover"
+string fastLabel  = isSingleMode ? i_maType + " (" + str.tostring(i_maLen) + ")" : i_maType + " (" + str.tostring(i_maLen) + ")"
+string slowLabel  = i_slowMaType + " (" + str.tostring(i_slowMaLen) + ")"
+float  distance   = isSingleMode ? src - maFast : maFast - maSlow
+float  distPct    = isSingleMode ? (src - maFast) / maFast * 100 : (maFast - maSlow) / maSlow * 100
+
+if barstate.islast and i_showDashboard
+    table.cell(dashboard, 0, 0, '⚜️ Perpetual Suite', text_color = TEXT_COLOR, bgcolor = color.new(trendColor, 70), text_halign = text.align_center)
+    table.cell(dashboard, 1, 0, '', bgcolor = color.new(trendColor, 70))
+
+    table.cell(dashboard, 0, 1, 'Mode', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 1, modeText, text_color = neutralColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 2, 'Trend', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 2, trendText, text_color = trendColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 3, isSingleMode ? 'MA' : 'Fast MA', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 3, fastLabel, text_color = neutralColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 4, isSingleMode ? 'MA Value' : 'Slow MA', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 4, isSingleMode ? fmt(maFast, '#.##') : slowLabel, text_color = neutralColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 5, isSingleMode ? 'Price' : 'Fast Value', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 5, isSingleMode ? fmt(src, '#.##') : fmt(maFast, '#.##'), text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 6, 'Distance', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 6, fmt(distance, '#.##'), text_color = trendColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+    table.cell(dashboard, 0, 7, 'Distance %', text_color = TEXT_COLOR, bgcolor = BG_COLOR, text_halign = text.align_left)
+    table.cell(dashboard, 1, 7, fmt(distPct, '#.##') + '%', text_color = trendColor, bgcolor = BG_COLOR, text_halign = text.align_right)
+
+//====================================================================================================================//
+//-Alert Conditions---------------------------------------------------------------------------------------------------//
+//====================================================================================================================//
+
+alertcondition(bullSignal, title = 'Bullish Signal', message = '{{ticker}} {{interval}} — Perpetual Suite: Bullish signal')
+alertcondition(bearSignal, title = 'Bearish Signal', message = '{{ticker}} {{interval}} — Perpetual Suite: Bearish signal')
+alertcondition(isBullish != isBullish[1], title = 'Trend Change', message = '{{ticker}} {{interval}} — Perpetual Suite: Trend changed')
