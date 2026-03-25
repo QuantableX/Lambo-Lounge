@@ -11,6 +11,7 @@ import TheTradingSpiderMan/ColorsLibrary/2 as CLR
 GROUP_DETECT  = '⚜️ 𝐃𝐞𝐭𝐞𝐜𝐭𝐢𝐨𝐧 ⚜️'
 GROUP_SENS    = '⚜️ 𝐒𝐞𝐧𝐬𝐢𝐭𝐢𝐯𝐢𝐭𝐲 ⚜️'
 GROUP_VISUAL  = '⚜️ 𝐕𝐢𝐬𝐮𝐚𝐥 ⚜️'
+GROUP_VSA     = '⚜️ 𝐕𝐒𝐀 / 𝐕𝐨𝐥𝐮𝐦𝐞 ⚜️'
 GROUP_COLORS  = '⚜️ 𝐂𝐨𝐥𝐨𝐫𝐬 ⚜️'
 
 // Detection
@@ -30,14 +31,22 @@ i_wideMult     = input.float(1.2, 'Wide Spread Multiplier', minval = 1.0, maxval
 i_narrowMult   = input.float(0.8, 'Narrow Spread Multiplier', minval = 0.3, maxval = 1.0, step = 0.05, group = GROUP_SENS, tooltip = 'Bar spread factor for narrow-range bars')
 i_stVolRatio   = input.float(0.85, 'ST Volume Ratio', minval = 0.5, maxval = 1.2, step = 0.05, group = GROUP_SENS, tooltip = 'ST volume must be below this fraction of climax volume')
 i_stSpreadRatio = input.float(0.95, 'ST Spread Ratio', minval = 0.5, maxval = 1.5, step = 0.05, group = GROUP_SENS, tooltip = 'ST spread must be below this fraction of climax spread')
+i_spikeThresh  = input.float(2.0, 'Vol Spike StdDev', minval = 1.0, maxval = 4.0, step = 0.1, group = GROUP_SENS, tooltip = 'Standard deviations above MA for volume spike detection')
 
 // Visual
 i_showLabels   = input.bool(true, 'Show Event Labels', group = GROUP_VISUAL)
 i_showBox      = input.bool(true, 'Show Trading Range', group = GROUP_VISUAL)
 i_showTable    = input.bool(true, 'Show Info Table', group = GROUP_VISUAL)
 i_showRangeLines = input.bool(true, 'Show Support/Resistance Lines', group = GROUP_VISUAL)
-i_tablePos     = input.string('Top Right', 'Table Position', options = ['Top Left', 'Top Right', 'Bottom Left', 'Bottom Right'], group = GROUP_VISUAL)
+i_tablePos     = input.string('Middle Right', 'Table Position', options = ['Middle Right', 'Middle Left', 'Top Right', 'Top Left', 'Bottom Right', 'Bottom Left'], group = GROUP_VISUAL)
 i_labelSize    = input.string('Normal', 'Label Size', options = ['Tiny', 'Small', 'Normal'], group = GROUP_VISUAL)
+i_showLegend   = input.bool(true, 'Show Legend', group = GROUP_VISUAL, tooltip = 'Color/symbol legend in bottom-right corner')
+
+// VSA / Volume
+i_showVSA      = input.bool(true, 'Show VSA Bar Coloring', group = GROUP_VSA, tooltip = 'Color bars by Wyckoff volume classification')
+i_showNoDS     = input.bool(true, 'Show No Demand / No Supply', group = GROUP_VSA, tooltip = 'Mark bars with no institutional interest')
+i_showSpikes   = input.bool(true, 'Show Volume Spikes', group = GROUP_VSA, tooltip = 'Mark statistically significant volume spikes')
+i_noDSRatio    = input.float(0.7, 'No Demand/Supply Vol Ratio', minval = 0.3, maxval = 1.0, step = 0.05, group = GROUP_VSA, tooltip = 'Volume must be below this fraction of MA for No Demand/Supply')
 
 // Colors
 colorTheme     = input.string('DEFAULT', 'Color Theme', options = ['DEFAULT', 'MONO', 'VAPOR', 'NEON', 'OCEAN', 'SUNSET', 'FOREST', 'CANDY', 'FIRE', 'ICE'], group = GROUP_COLORS)
@@ -126,6 +135,30 @@ nearHighs      = nearHighsPct or nearHighsATR
 // Effort vs Result
 effortResult   = spread > 0 and volMA > 0 ? (volume / volMA) / (spread / avgSpread) : 1.0
 
+// Volume Spike (STDDEV-based)
+volStdev       = ta.stdev(volume, i_volLen)
+isVolSpike     = volume > volMA + i_spikeThresh * volStdev
+
+// Volume Density (Absorption)
+volDensity     = spread > 0 ? volume / spread : 0.0
+avgDensity     = ta.sma(volDensity, i_volLen)
+isHighDensity  = avgDensity > 0 and volDensity > avgDensity * 1.5
+
+// Wick Analysis
+upperWick      = high - math.max(open, close)
+lowerWick      = math.min(open, close) - low
+upperWickPct   = spread > 0 ? upperWick / spread : 0.0
+lowerWickPct   = spread > 0 ? lowerWick / spread : 0.0
+
+// VSA Volume Classification
+volClass       = volume >= volMA * 2.2 ? 6 : volume >= volMA * 1.8 ? 5 : volume >= volMA * 1.2 ? 4 : volume >= volMA * 0.8 ? 3 : volume >= volMA * 0.4 ? 2 : 1
+// 6=Ultra High, 5=Very High, 4=High, 3=Normal, 2=Low, 1=Very Low
+
+// No Demand: up bar + low volume + narrow spread (bearish warning)
+isNoDemand     = close > open and volume < volMA * i_noDSRatio and isNarrowSpread
+// No Supply: down bar + low volume + narrow spread (bullish warning)
+isNoSupply     = close < open and volume < volMA * i_noDSRatio and isNarrowSpread
+
 // ============================== STATE ==============================
 
 // Mode: 0 = Scanning, 1 = Accumulation, 2 = Distribution
@@ -140,6 +173,12 @@ var bool  ev_spring     = false
 var bool  ev_test       = false
 var bool  ev_sos        = false
 var bool  ev_lps        = false
+
+// Preliminary events (pre-schematic)
+var bool  ev_ps         = false   // Preliminary Support
+var bool  ev_psy        = false   // Preliminary Supply
+var int   psBar         = na      // bar_index when PS detected
+var int   psyBar        = na      // bar_index when PSY detected
 
 // Distribution events
 var bool  ev_bc         = false
@@ -166,6 +205,8 @@ var float q_spr   = 0.0
 var float q_tst   = 0.0
 var float q_sos   = 0.0
 var float q_lps   = 0.0
+var float q_ps    = 0.0
+var float q_psy   = 0.0
 var float q_bc    = 0.0
 var float q_ar_d  = 0.0
 var float q_st_d  = 0.0
@@ -183,6 +224,8 @@ var line  resistLine    = na
 if mode != 0 and bar_index - nz(rangeStart, bar_index) > aResetBars
     mode          := 0
     phase         := 0
+    ev_ps         := false
+    ev_psy        := false
     ev_sc         := false
     ev_ar_a       := false
     ev_st_a       := false
@@ -203,6 +246,10 @@ if mode != 0 and bar_index - nz(rangeStart, bar_index) > aResetBars
     climaxSpread  := na
     lastEvtBar    := na
     springLow     := na
+    psBar         := na
+    psyBar        := na
+    q_ps          := 0.0
+    q_psy         := 0.0
     q_sc          := 0.0
     q_ar_a        := 0.0
     q_st_a        := 0.0
@@ -220,6 +267,25 @@ if mode != 0 and bar_index - nz(rangeStart, bar_index) > aResetBars
 // ============================== ACCUMULATION DETECTION ==============================
 
 barsSince() => bar_index - nz(lastEvtBar, 0)
+
+// --- Preliminary Support (PS) ---
+// First sign of institutional buying — high volume near lows but not climactic
+det_ps = mode == 0 and not ev_ps
+     and not isUptrend
+     and nearLows
+     and isHighVol and not isClimaxVol
+     and (close > open or closePos >= 0.4)
+     and (isDowntrend or isFalling or isBearMom)
+     and lowerWickPct >= 0.25
+
+if det_ps
+    ev_ps    := true
+    psBar    := bar_index
+    q_ps := math.min(
+         (volRatio >= 1.5 ? 30.0 : volRatio >= 1.2 ? 20.0 : 10.0) +
+         (lowerWickPct >= 0.4 ? 30.0 : lowerWickPct >= 0.25 ? 20.0 : 10.0) +
+         (closePos >= 0.5 ? 25.0 : closePos >= 0.4 ? 15.0 : 8.0) +
+         (low <= lowestLow * 1.02 ? 15.0 : 8.0), 100.0)
 
 // --- Selling Climax (SC) ---
 // High volume bar near lows, bearish context, NOT in uptrend
@@ -241,10 +307,13 @@ if det_sc
     climaxSpread := spread
     lastEvtBar   := bar_index
     q_sc := math.min(
-         (volRatio >= 2.5 ? 30.0 : volRatio >= 2.0 ? 25.0 : volRatio >= 1.5 ? 18.0 : 10.0) +
-         (spreadRatio >= 1.8 ? 25.0 : spreadRatio >= 1.3 ? 18.0 : 10.0) +
-         (closePos >= 0.5 ? 25.0 : closePos >= 0.3 ? 15.0 : 8.0) +
-         (low <= lowestLow ? 20.0 : low <= lowestLow * 1.01 ? 15.0 : 8.0), 100.0)
+         (volRatio >= 2.5 ? 25.0 : volRatio >= 2.0 ? 20.0 : volRatio >= 1.5 ? 15.0 : 8.0) +
+         (spreadRatio >= 1.8 ? 20.0 : spreadRatio >= 1.3 ? 15.0 : 8.0) +
+         (closePos >= 0.5 ? 15.0 : closePos >= 0.3 ? 10.0 : 5.0) +
+         (low <= lowestLow ? 15.0 : low <= lowestLow * 1.01 ? 10.0 : 5.0) +
+         (lowerWickPct >= 0.3 ? 10.0 : lowerWickPct >= 0.15 ? 5.0 : 0.0) +
+         (effortResult >= 1.5 ? 10.0 : effortResult >= 1.0 ? 5.0 : 0.0) +
+         (isVolSpike ? 5.0 : 0.0), 100.0)
 
 // --- SC Update: if we get a deeper low with strong volume before AR, update SC ---
 if mode == 1 and ev_sc and not ev_ar_a and low < rangeLow and volume >= climaxVol * 0.8
@@ -315,10 +384,13 @@ if det_spring_lv or det_spring_hv or det_spring_ok
         phase := 3
     penetration  = nz(atr) > 0 ? (rangeLow - low) / atr : 1.0
     q_spr := math.min(
-         (isLowVol ? 35.0 : volume < volMA ? 25.0 : 12.0) +
-         (close > open ? 25.0 : closePos >= 0.5 ? 15.0 : 8.0) +
-         (closePos >= 0.7 ? 20.0 : closePos >= 0.5 ? 12.0 : 5.0) +
-         (penetration < 0.5 ? 20.0 : penetration < 1.5 ? 15.0 : 5.0), 100.0)
+         (isLowVol ? 25.0 : volume < volMA ? 18.0 : 8.0) +
+         (close > open ? 18.0 : closePos >= 0.5 ? 12.0 : 5.0) +
+         (closePos >= 0.7 ? 15.0 : closePos >= 0.5 ? 10.0 : 5.0) +
+         (penetration < 0.5 ? 15.0 : penetration < 1.5 ? 10.0 : 5.0) +
+         (lowerWickPct >= 0.4 ? 10.0 : lowerWickPct >= 0.2 ? 5.0 : 0.0) +
+         (isHighDensity ? 10.0 : 0.0) +
+         (effortResult >= 1.5 ? 7.0 : 0.0), 100.0)
 
 // --- Test after Spring ---
 // Higher low than Spring on diminished volume
@@ -379,6 +451,25 @@ if det_lps
 
 // ============================== DISTRIBUTION DETECTION ==============================
 
+// --- Preliminary Supply (PSY) ---
+// First sign of institutional selling — high volume near highs but not climactic
+det_psy = mode == 0 and not ev_psy
+     and not isDowntrend
+     and nearHighs
+     and isHighVol and not isClimaxVol
+     and (close < open or closePos <= 0.6)
+     and (isUptrend or isRising or isBullMom)
+     and upperWickPct >= 0.25
+
+if det_psy
+    ev_psy   := true
+    psyBar   := bar_index
+    q_psy := math.min(
+         (volRatio >= 1.5 ? 30.0 : volRatio >= 1.2 ? 20.0 : 10.0) +
+         (upperWickPct >= 0.4 ? 30.0 : upperWickPct >= 0.25 ? 20.0 : 10.0) +
+         (closePos <= 0.5 ? 25.0 : closePos <= 0.6 ? 15.0 : 8.0) +
+         (high >= highestHigh * 0.98 ? 15.0 : 8.0), 100.0)
+
 // --- Buying Climax (BC) ---
 // High volume bar near highs, bullish context, NOT in downtrend
 det_bc = mode == 0
@@ -398,10 +489,13 @@ if det_bc
     climaxSpread := spread
     lastEvtBar   := bar_index
     q_bc := math.min(
-         (volRatio >= 2.5 ? 30.0 : volRatio >= 2.0 ? 25.0 : volRatio >= 1.5 ? 18.0 : 10.0) +
-         (spreadRatio >= 1.8 ? 25.0 : spreadRatio >= 1.3 ? 18.0 : 10.0) +
-         (closePos <= 0.3 ? 25.0 : closePos <= 0.5 ? 15.0 : 8.0) +
-         (high >= highestHigh ? 20.0 : high >= highestHigh * 0.99 ? 15.0 : 8.0), 100.0)
+         (volRatio >= 2.5 ? 25.0 : volRatio >= 2.0 ? 20.0 : volRatio >= 1.5 ? 15.0 : 8.0) +
+         (spreadRatio >= 1.8 ? 20.0 : spreadRatio >= 1.3 ? 15.0 : 8.0) +
+         (closePos <= 0.3 ? 15.0 : closePos <= 0.5 ? 10.0 : 5.0) +
+         (high >= highestHigh ? 15.0 : high >= highestHigh * 0.99 ? 10.0 : 5.0) +
+         (upperWickPct >= 0.3 ? 10.0 : upperWickPct >= 0.15 ? 5.0 : 0.0) +
+         (effortResult >= 1.5 ? 10.0 : effortResult >= 1.0 ? 5.0 : 0.0) +
+         (isVolSpike ? 5.0 : 0.0), 100.0)
 
 // --- BC Update: higher high with strong volume before AR ---
 if mode == 2 and ev_bc and not ev_ar_d and high > rangeHigh and volume >= climaxVol * 0.8
@@ -466,10 +560,13 @@ if det_utad
         phase := 3
     penetrationD = nz(atr) > 0 ? (high - nz(rangeHigh)) / atr : 1.0
     q_utad := math.min(
-         (close < open ? 30.0 : closePos <= 0.5 ? 18.0 : 8.0) +
-         (isLowVol ? 25.0 : volume < volMA ? 18.0 : 8.0) +
-         (closePos <= 0.3 ? 25.0 : closePos <= 0.5 ? 15.0 : 5.0) +
-         (penetrationD < 1.0 ? 20.0 : penetrationD < 2.0 ? 12.0 : 5.0), 100.0)
+         (close < open ? 22.0 : closePos <= 0.5 ? 14.0 : 5.0) +
+         (isLowVol ? 18.0 : volume < volMA ? 12.0 : 5.0) +
+         (closePos <= 0.3 ? 18.0 : closePos <= 0.5 ? 12.0 : 5.0) +
+         (penetrationD < 1.0 ? 15.0 : penetrationD < 2.0 ? 10.0 : 5.0) +
+         (upperWickPct >= 0.4 ? 15.0 : upperWickPct >= 0.2 ? 8.0 : 0.0) +
+         (isHighDensity ? 7.0 : 0.0) +
+         (effortResult >= 1.5 ? 5.0 : 0.0), 100.0)
 
 // --- Sign of Weakness (SOW) ---
 // Breakdown below AR low on increased volume — on HTF allow near-breakdown
@@ -512,34 +609,36 @@ if det_lpsy
 
 // ============================== SCORING ==============================
 
-// Accumulation: SC=0.12 AR=0.08 ST=0.10 Spring=0.25 Test=0.10 SOS=0.20 LPS=0.15
+// Accumulation: PS=0.05 SC=0.11 AR=0.07 ST=0.09 Spring=0.24 Test=0.09 SOS=0.20 LPS=0.15
 acc_score = mode == 1 ? math.min(
-     (ev_sc     ? q_sc   * 0.12 : 0.0) +
-     (ev_ar_a   ? q_ar_a * 0.08 : 0.0) +
-     (ev_st_a   ? q_st_a * 0.10 : 0.0) +
-     (ev_spring ? q_spr  * 0.25 : 0.0) +
-     (ev_test   ? q_tst  * 0.10 : 0.0) +
+     (ev_ps     ? q_ps   * 0.05 : 0.0) +
+     (ev_sc     ? q_sc   * 0.11 : 0.0) +
+     (ev_ar_a   ? q_ar_a * 0.07 : 0.0) +
+     (ev_st_a   ? q_st_a * 0.09 : 0.0) +
+     (ev_spring ? q_spr  * 0.24 : 0.0) +
+     (ev_test   ? q_tst  * 0.09 : 0.0) +
      (ev_sos    ? q_sos  * 0.20 : 0.0) +
      (ev_lps    ? q_lps  * 0.15 : 0.0),
      100.0) : 0.0
 
-acc_count = (ev_sc ? 1 : 0) + (ev_ar_a ? 1 : 0) + (ev_st_a ? 1 : 0) + (ev_spring ? 1 : 0) + (ev_test ? 1 : 0) + (ev_sos ? 1 : 0) + (ev_lps ? 1 : 0)
+acc_count = (ev_ps ? 1 : 0) + (ev_sc ? 1 : 0) + (ev_ar_a ? 1 : 0) + (ev_st_a ? 1 : 0) + (ev_spring ? 1 : 0) + (ev_test ? 1 : 0) + (ev_sos ? 1 : 0) + (ev_lps ? 1 : 0)
 
-// Distribution: BC=0.12 AR=0.08 ST=0.10 UTAD=0.20 SOW=0.25 LPSY=0.25
+// Distribution: PSY=0.05 BC=0.11 AR=0.07 ST=0.09 UTAD=0.18 SOW=0.25 LPSY=0.25
 dist_score = mode == 2 ? math.min(
-     (ev_bc    ? q_bc   * 0.12 : 0.0) +
-     (ev_ar_d  ? q_ar_d * 0.08 : 0.0) +
-     (ev_st_d  ? q_st_d * 0.10 : 0.0) +
-     (ev_utad  ? q_utad * 0.20 : 0.0) +
+     (ev_psy   ? q_psy  * 0.05 : 0.0) +
+     (ev_bc    ? q_bc   * 0.11 : 0.0) +
+     (ev_ar_d  ? q_ar_d * 0.07 : 0.0) +
+     (ev_st_d  ? q_st_d * 0.09 : 0.0) +
+     (ev_utad  ? q_utad * 0.18 : 0.0) +
      (ev_sow   ? q_sow  * 0.25 : 0.0) +
      (ev_lpsy  ? q_lpsy * 0.25 : 0.0),
      100.0) : 0.0
 
-dist_count = (ev_bc ? 1 : 0) + (ev_ar_d ? 1 : 0) + (ev_st_d ? 1 : 0) + (ev_utad ? 1 : 0) + (ev_sow ? 1 : 0) + (ev_lpsy ? 1 : 0)
+dist_count = (ev_psy ? 1 : 0) + (ev_bc ? 1 : 0) + (ev_ar_d ? 1 : 0) + (ev_st_d ? 1 : 0) + (ev_utad ? 1 : 0) + (ev_sow ? 1 : 0) + (ev_lpsy ? 1 : 0)
 
 currentScore  = mode == 1 ? acc_score : mode == 2 ? dist_score : 0.0
 currentCount  = mode == 1 ? acc_count : mode == 2 ? dist_count : 0
-maxEvents     = mode == 1 ? 7 : mode == 2 ? 6 : 0
+maxEvents     = mode == 1 ? 8 : mode == 2 ? 7 : 0
 
 // ============================== LABELS ==============================
 
@@ -550,6 +649,8 @@ if i_showLabels
     keyAccCol = color.rgb(0, 230, 118)
     keyDstCol = color.rgb(255, 82, 82)
 
+    if det_ps
+        label.new(bar_index, low, 'PS', style = label.style_label_up, color = color.new(accCol, 30), textcolor = color.white, size = lblSize)
     if det_sc
         label.new(bar_index, low, 'SC', style = label.style_label_up, color = accCol, textcolor = color.white, size = lblSize)
     if det_ar_a
@@ -565,6 +666,8 @@ if i_showLabels
     if det_lps
         label.new(pivBar, pivLow, 'LPS', style = label.style_label_up, color = accCol, textcolor = color.white, size = lblSize)
 
+    if det_psy
+        label.new(bar_index, high, 'PSY', style = label.style_label_down, color = color.new(dstCol, 30), textcolor = color.white, size = lblSize)
     if det_bc
         label.new(bar_index, high, 'BC', style = label.style_label_down, color = dstCol, textcolor = color.white, size = lblSize)
     if det_ar_d
@@ -599,7 +702,54 @@ if i_showRangeLines and not na(rangeHigh) and not na(rangeLow) and mode != 0
     supportLine := line.new(rangeStart, rangeLow, bar_index, rangeLow,
          color = color.new(lnCol, 50), width = 1, style = line.style_dotted)
 
+// ============================== VSA BAR COLORING ==============================
+
+vsaBullVol  = color.rgb(0, 200, 100)     // Bullish volume (up bar + high vol)
+vsaBearVol  = color.rgb(220, 50, 50)     // Bearish volume (down bar + high vol)
+vsaDecVol   = color.rgb(130, 80, 180)    // Decreasing volume
+vsaNoDSCol  = color.rgb(180, 180, 180)   // No Demand / No Supply
+vsaUltraCol = color.rgb(255, 215, 0)     // Ultra High volume
+
+vsaBarCol = if i_showVSA
+    if volClass >= 6
+        vsaUltraCol
+    else if volClass >= 4 and close > open
+        vsaBullVol
+    else if volClass >= 4 and close <= open
+        vsaBearVol
+    else if isNoDemand or isNoSupply
+        vsaNoDSCol
+    else if volClass <= 2
+        vsaDecVol
+    else
+        na
+else
+    na
+
+barcolor(vsaBarCol)
+
+// ============================== VOLUME SPIKE & NO DEMAND/SUPPLY PLOTS ==============================
+
+plotshape(i_showSpikes and isVolSpike and close > open, title = 'Vol Spike Bull', style = shape.diamond, location = location.abovebar, color = color.rgb(0, 230, 118), size = size.tiny)
+plotshape(i_showSpikes and isVolSpike and close <= open, title = 'Vol Spike Bear', style = shape.diamond, location = location.belowbar, color = color.rgb(255, 82, 82), size = size.tiny)
+plotshape(i_showNoDS and isNoDemand, title = 'No Demand', style = shape.xcross, location = location.abovebar, color = color.rgb(255, 165, 0, 40), size = size.tiny)
+plotshape(i_showNoDS and isNoSupply, title = 'No Supply', style = shape.xcross, location = location.belowbar, color = color.rgb(0, 180, 255, 40), size = size.tiny)
+
 // ============================== INFO TABLE ==============================
+
+// ── QuantCore sizing constants ──
+COL_H    = 3.75
+COL_W1   = 5.0
+COL_W2   = 8.0
+COL_W3   = 5.0
+TBL_W    = 18.0
+TBL_SB   = 0.01
+TBL_TS   = size.large
+TBL_HDR  = size.large
+LEG_TS   = size.normal
+BG       = color.rgb(0, 0, 0)
+BR       = color.rgb(30, 30, 30)
+FR       = color.rgb(35, 35, 35)
 
 // Table helper functions (must be at global scope)
 statusTxt(bool detected, float quality) =>
@@ -616,168 +766,388 @@ if i_showTable and barstate.islast
         'Top Left'     => position.top_left
         'Top Right'    => position.top_right
         'Bottom Left'  => position.bottom_left
-        => position.bottom_right
+        'Bottom Right' => position.bottom_right
+        'Middle Left'  => position.middle_left
+        => position.middle_right
 
-    ROWS = 15
-    var table tbl = table.new(tPos, 4, ROWS,
-         bgcolor = color.rgb(10, 10, 14),
-         border_color = color.rgb(30, 30, 38),
-         border_width = 1,
-         frame_color = color.rgb(45, 45, 55),
-         frame_width = 2)
+    var table tbl = table.new(tPos, 5, 24, bgcolor = BG, border_width = 2, border_color = BR, frame_color = FR, frame_width = 4)
 
     // ── Colors ──
-    goldCol    = color.rgb(218, 165, 32)
-    dimCol     = color.rgb(90, 90, 100)
-    labelCol   = color.rgb(140, 140, 155)
-    whiteCol   = color.rgb(220, 220, 225)
-    greenCol   = color.rgb(0, 230, 118)
-    orangeCol  = color.rgb(255, 165, 0)
-    redCol     = color.rgb(255, 82, 82)
-    headerBg   = color.rgb(18, 18, 25)
-    sectionBg  = color.rgb(15, 15, 20)
+    goldCol   = color.rgb(218, 165, 32)
+    dimCol    = color.rgb(90, 90, 100)
+    labelCol  = color.rgb(140, 140, 155)
+    txtCol    = color.silver
+    greenCol  = color.rgb(0, 230, 118)
+    orangeCol = color.rgb(255, 165, 0)
+    redCol    = color.rgb(255, 82, 82)
+    cyanCol   = color.rgb(0, 200, 255)
+    purpleCol = color.rgb(180, 120, 255)
 
-    // ── Row 0: Title ──
-    table.cell(tbl, 0, 0, '⚜️', text_color = goldCol, text_size = size.normal, bgcolor = headerBg)
-    table.cell(tbl, 1, 0, 'QuantWyckoff', text_color = goldCol, text_size = size.normal, bgcolor = headerBg)
-    table.cell(tbl, 2, 0, '', bgcolor = headerBg)
-    table.cell(tbl, 3, 0, '', bgcolor = headerBg)
+    // ── Border frame (identical to QuantDEX) ──
+    // Merge first, then fill cells
+    table.merge_cells(tbl, 0, 0, 0, 0)
+    table.merge_cells(tbl, 4, 0, 4, 0)
+    table.merge_cells(tbl, 0, 23, 0, 23)
+    table.merge_cells(tbl, 4, 23, 4, 23)
+    table.merge_cells(tbl, 0, 1, 0, 22)
+    table.merge_cells(tbl, 4, 1, 4, 22)
+    table.merge_cells(tbl, 1, 0, 3, 0)
+    table.merge_cells(tbl, 1, 23, 3, 23)
+    table.merge_cells(tbl, 1, 1, 3, 1)
 
-    // ── Row 1: Pattern Type ──
+    // Corner cells
+    table.cell(tbl, 0, 0,  text = '', bgcolor = BR, width = TBL_SB, height = TBL_SB, text_size = TBL_TS)
+    table.cell(tbl, 4, 0,  text = '', bgcolor = BR, width = TBL_SB, height = TBL_SB, text_size = TBL_TS)
+    table.cell(tbl, 0, 23, text = '', bgcolor = BR, width = TBL_SB, height = TBL_SB, text_size = TBL_TS)
+    table.cell(tbl, 4, 23, text = '', bgcolor = BR, width = TBL_SB, height = TBL_SB, text_size = TBL_TS)
+    // Vertical edges
+    table.cell(tbl, 0, 1,  text = '', bgcolor = BR, width = TBL_SB, text_size = TBL_TS)
+    table.cell(tbl, 4, 1,  text = '', bgcolor = BR, width = TBL_SB, text_size = TBL_TS)
+    // Horizontal edges
+    table.cell(tbl, 1, 0,  text = '', bgcolor = BR, height = TBL_SB, text_size = TBL_TS)
+    table.cell(tbl, 1, 23, text = '', bgcolor = BR, height = TBL_SB, text_size = TBL_TS)
+
+    // ── Row 1: Title ──
+    table.cell(tbl, 1, 1, text = '⚜️ 𝐐𝐮𝐚𝐧𝐭𝐖𝐲𝐜𝐤𝐨𝐟𝐟 ⚜️', text_color = goldCol, bgcolor = BG, width = TBL_W, height = COL_H, text_size = TBL_HDR)
+
+    // ── Row 2: Pattern ──
     pTxt = mode == 1 ? 'ACCUMULATION' : mode == 2 ? 'DISTRIBUTION' : 'SCANNING'
     pCol = mode == 1 ? greenCol : mode == 2 ? redCol : dimCol
-    table.cell(tbl, 0, 1, 'Pattern', text_color = labelCol, text_size = size.small, bgcolor = sectionBg)
-    table.cell(tbl, 1, 1, pTxt, text_color = pCol, text_size = size.small, bgcolor = sectionBg, text_halign = text.align_right)
-    table.cell(tbl, 2, 1, '', bgcolor = sectionBg)
-    table.cell(tbl, 3, 1, '', bgcolor = sectionBg)
+    table.cell(tbl, 1, 2, text = 'Pattern', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 2, text = pTxt, text_color = pCol, width = COL_W3, height = COL_H, text_size = TBL_TS, text_halign = text.align_center)
+    table.cell(tbl, 3, 2, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+    table.merge_cells(tbl, 2, 2, 3, 2)
 
-    // ── Row 2: Overall Match Score ──
+    // ── Row 3: Match ──
     sTxt = mode != 0 ? str.tostring(currentScore, '#.0') + '%' : '—'
     sCol = currentScore >= 60 ? greenCol : currentScore >= 35 ? orangeCol : currentScore > 0 ? redCol : dimCol
-    table.cell(tbl, 0, 2, 'Match', text_color = labelCol, text_size = size.small, bgcolor = sectionBg)
-    table.cell(tbl, 1, 2, sTxt, text_color = sCol, text_size = size.normal, bgcolor = sectionBg, text_halign = text.align_right)
-    table.cell(tbl, 2, 2, '', bgcolor = sectionBg)
-    table.cell(tbl, 3, 2, '', bgcolor = sectionBg)
+    table.cell(tbl, 1, 3, text = 'Match', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 3, text = sTxt, text_color = sCol, width = COL_W3, height = COL_H, text_size = TBL_TS, text_halign = text.align_center)
+    table.cell(tbl, 3, 3, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+    table.merge_cells(tbl, 2, 3, 3, 3)
 
-    // ── Row 3: Phase ──
+    // ── Row 4: Phase ──
     phTxt = phase == 1 ? 'A · Stopping' : phase == 2 ? 'B · Building' : phase == 3 ? 'C · Test' : phase == 4 ? 'D · Breakout' : phase == 5 ? 'E · Confirmed' : '—'
-    phCol = phase >= 4 ? greenCol : phase >= 2 ? orangeCol : phase >= 1 ? whiteCol : dimCol
-    table.cell(tbl, 0, 3, 'Phase', text_color = labelCol, text_size = size.small, bgcolor = sectionBg)
-    table.cell(tbl, 1, 3, phTxt, text_color = phCol, text_size = size.small, bgcolor = sectionBg, text_halign = text.align_right)
-    table.cell(tbl, 2, 3, '', bgcolor = sectionBg)
-    table.cell(tbl, 3, 3, '', bgcolor = sectionBg)
+    phCol = phase >= 4 ? greenCol : phase >= 2 ? orangeCol : phase >= 1 ? txtCol : dimCol
+    table.cell(tbl, 1, 4, text = 'Phase', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 4, text = phTxt, text_color = phCol, width = COL_W3, height = COL_H, text_size = TBL_TS, text_halign = text.align_center)
+    table.cell(tbl, 3, 4, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+    table.merge_cells(tbl, 2, 4, 3, 4)
 
-    // ── Row 4: Events count ──
+    // ── Row 5: Strength ──
+    strTxt = currentScore >= 60 ? 'STRONG' : currentScore >= 35 ? 'MODERATE' : mode != 0 ? 'WEAK' : '—'
+    strCol = currentScore >= 60 ? greenCol : currentScore >= 35 ? orangeCol : mode != 0 ? redCol : dimCol
+    table.cell(tbl, 1, 5, text = 'Strength', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 5, text = strTxt, text_color = strCol, width = COL_W3, height = COL_H, text_size = TBL_TS, text_halign = text.align_center)
+    table.cell(tbl, 3, 5, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+    table.merge_cells(tbl, 2, 5, 3, 5)
+
+    // ── Row 6: Events ──
     evTxt = str.tostring(currentCount) + ' / ' + str.tostring(maxEvents)
-    table.cell(tbl, 0, 4, 'Events', text_color = labelCol, text_size = size.small, bgcolor = sectionBg)
-    table.cell(tbl, 1, 4, evTxt, text_color = whiteCol, text_size = size.small, bgcolor = sectionBg, text_halign = text.align_right)
-    table.cell(tbl, 2, 4, '', bgcolor = sectionBg)
-    table.cell(tbl, 3, 4, '', bgcolor = sectionBg)
+    table.cell(tbl, 1, 6, text = 'Events', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 6, text = evTxt, text_color = txtCol, width = COL_W3, height = COL_H, text_size = TBL_TS, text_halign = text.align_center)
+    table.cell(tbl, 3, 6, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+    table.merge_cells(tbl, 2, 6, 3, 6)
 
-    // ── Row 5: Separator ──
-    table.cell(tbl, 0, 5, '───', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg)
-    table.cell(tbl, 1, 5, 'Event', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg, text_halign = text.align_right)
-    table.cell(tbl, 2, 5, '', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg)
-    table.cell(tbl, 3, 5, 'Quality', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg, text_halign = text.align_right)
+    // ── Row 7: Column header ──
+    table.cell(tbl, 1, 7, text = '𝐄𝐯𝐞𝐧𝐭', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 7, text = '𝐒𝐭𝐚𝐭𝐮𝐬', text_color = txtCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 3, 7, text = '𝐐𝐮𝐚𝐥𝐢𝐭𝐲', text_color = txtCol, width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-    // ── Rows 6-12: Event Checklist ──
+    // ── Rows 8-15: Event Checklist ──
     if mode == 1
-        table.cell(tbl, 0, 6,  dotTxt(ev_sc),     text_color = statusCol(ev_sc, q_sc, greenCol, orangeCol, redCol, dimCol),         text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 6,  'Selling Climax',   text_color = ev_sc ? whiteCol : dimCol,      text_size = size.small)
-        table.cell(tbl, 2, 6,  'SC',               text_color = ev_sc ? labelCol : dimCol,      text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 6,  statusTxt(ev_sc, q_sc), text_color = statusCol(ev_sc, q_sc, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 8,  text = 'PS',    text_color = ev_ps ? txtCol : dimCol,       width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 8,  text = dotTxt(ev_ps),       text_color = statusCol(ev_ps, q_ps, greenCol, orangeCol, redCol, dimCol),     width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 8,  text = statusTxt(ev_ps, q_ps), text_color = statusCol(ev_ps, q_ps, greenCol, orangeCol, redCol, dimCol),  width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 7,  dotTxt(ev_ar_a),    text_color = statusCol(ev_ar_a, q_ar_a, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 7,  'Auto Rally',       text_color = ev_ar_a ? whiteCol : dimCol,    text_size = size.small)
-        table.cell(tbl, 2, 7,  'AR',               text_color = ev_ar_a ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 7,  statusTxt(ev_ar_a, q_ar_a), text_color = statusCol(ev_ar_a, q_ar_a, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 9,  text = 'SC',    text_color = ev_sc ? txtCol : dimCol,       width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 9,  text = dotTxt(ev_sc),       text_color = statusCol(ev_sc, q_sc, greenCol, orangeCol, redCol, dimCol),     width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 9,  text = statusTxt(ev_sc, q_sc), text_color = statusCol(ev_sc, q_sc, greenCol, orangeCol, redCol, dimCol),  width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 8,  dotTxt(ev_st_a),    text_color = statusCol(ev_st_a, q_st_a, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 8,  'Secondary Test',   text_color = ev_st_a ? whiteCol : dimCol,    text_size = size.small)
-        table.cell(tbl, 2, 8,  'ST',               text_color = ev_st_a ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 8,  statusTxt(ev_st_a, q_st_a), text_color = statusCol(ev_st_a, q_st_a, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 10, text = 'AR',    text_color = ev_ar_a ? txtCol : dimCol,     width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 10, text = dotTxt(ev_ar_a),     text_color = statusCol(ev_ar_a, q_ar_a, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 10, text = statusTxt(ev_ar_a, q_ar_a), text_color = statusCol(ev_ar_a, q_ar_a, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 9,  dotTxt(ev_spring),  text_color = statusCol(ev_spring, q_spr, greenCol, orangeCol, redCol, dimCol),    text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 9,  'Spring',           text_color = ev_spring ? greenCol : dimCol,  text_size = size.small)
-        table.cell(tbl, 2, 9,  'SPR',              text_color = ev_spring ? labelCol : dimCol,  text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 9,  statusTxt(ev_spring, q_spr), text_color = statusCol(ev_spring, q_spr, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 11, text = 'ST',    text_color = ev_st_a ? txtCol : dimCol,     width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 11, text = dotTxt(ev_st_a),     text_color = statusCol(ev_st_a, q_st_a, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 11, text = statusTxt(ev_st_a, q_st_a), text_color = statusCol(ev_st_a, q_st_a, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 10, dotTxt(ev_test),    text_color = statusCol(ev_test, q_tst, greenCol, orangeCol, redCol, dimCol),      text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 10, 'Test',             text_color = ev_test ? whiteCol : dimCol,    text_size = size.small)
-        table.cell(tbl, 2, 10, 'TST',              text_color = ev_test ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 10, statusTxt(ev_test, q_tst), text_color = statusCol(ev_test, q_tst, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 12, text = 'SPR',   text_color = ev_spring ? greenCol : dimCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 12, text = dotTxt(ev_spring),   text_color = statusCol(ev_spring, q_spr, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 12, text = statusTxt(ev_spring, q_spr), text_color = statusCol(ev_spring, q_spr, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 11, dotTxt(ev_sos),     text_color = statusCol(ev_sos, q_sos, greenCol, orangeCol, redCol, dimCol),       text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 11, 'Sign of Strength', text_color = ev_sos ? greenCol : dimCol,     text_size = size.small)
-        table.cell(tbl, 2, 11, 'SOS',              text_color = ev_sos ? labelCol : dimCol,     text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 11, statusTxt(ev_sos, q_sos), text_color = statusCol(ev_sos, q_sos, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 13, text = 'TST',   text_color = ev_test ? txtCol : dimCol,     width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 13, text = dotTxt(ev_test),     text_color = statusCol(ev_test, q_tst, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 13, text = statusTxt(ev_test, q_tst), text_color = statusCol(ev_test, q_tst, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 12, dotTxt(ev_lps),     text_color = statusCol(ev_lps, q_lps, greenCol, orangeCol, redCol, dimCol),       text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 12, 'Last Pt Support',  text_color = ev_lps ? whiteCol : dimCol,     text_size = size.small)
-        table.cell(tbl, 2, 12, 'LPS',              text_color = ev_lps ? labelCol : dimCol,     text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 12, statusTxt(ev_lps, q_lps), text_color = statusCol(ev_lps, q_lps, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 14, text = 'SOS',   text_color = ev_sos ? greenCol : dimCol,    width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 14, text = dotTxt(ev_sos),      text_color = statusCol(ev_sos, q_sos, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 14, text = statusTxt(ev_sos, q_sos), text_color = statusCol(ev_sos, q_sos, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
+
+        table.cell(tbl, 1, 15, text = 'LPS',   text_color = ev_lps ? txtCol : dimCol,      width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 15, text = dotTxt(ev_lps),      text_color = statusCol(ev_lps, q_lps, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 15, text = statusTxt(ev_lps, q_lps), text_color = statusCol(ev_lps, q_lps, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
     else if mode == 2
-        table.cell(tbl, 0, 6,  dotTxt(ev_bc),      text_color = statusCol(ev_bc, q_bc, greenCol, orangeCol, redCol, dimCol),         text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 6,  'Buying Climax',    text_color = ev_bc ? whiteCol : dimCol,      text_size = size.small)
-        table.cell(tbl, 2, 6,  'BC',               text_color = ev_bc ? labelCol : dimCol,      text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 6,  statusTxt(ev_bc, q_bc), text_color = statusCol(ev_bc, q_bc, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 8,  text = 'PSY',   text_color = ev_psy ? txtCol : dimCol,      width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 8,  text = dotTxt(ev_psy),      text_color = statusCol(ev_psy, q_psy, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 8,  text = statusTxt(ev_psy, q_psy), text_color = statusCol(ev_psy, q_psy, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 7,  dotTxt(ev_ar_d),    text_color = statusCol(ev_ar_d, q_ar_d, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 7,  'Auto Reaction',    text_color = ev_ar_d ? whiteCol : dimCol,    text_size = size.small)
-        table.cell(tbl, 2, 7,  'AR',               text_color = ev_ar_d ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 7,  statusTxt(ev_ar_d, q_ar_d), text_color = statusCol(ev_ar_d, q_ar_d, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 9,  text = 'BC',    text_color = ev_bc ? txtCol : dimCol,       width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 9,  text = dotTxt(ev_bc),       text_color = statusCol(ev_bc, q_bc, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 9,  text = statusTxt(ev_bc, q_bc), text_color = statusCol(ev_bc, q_bc, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 8,  dotTxt(ev_st_d),    text_color = statusCol(ev_st_d, q_st_d, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 8,  'Secondary Test',   text_color = ev_st_d ? whiteCol : dimCol,    text_size = size.small)
-        table.cell(tbl, 2, 8,  'ST',               text_color = ev_st_d ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 8,  statusTxt(ev_st_d, q_st_d), text_color = statusCol(ev_st_d, q_st_d, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 10, text = 'AR',    text_color = ev_ar_d ? txtCol : dimCol,     width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 10, text = dotTxt(ev_ar_d),     text_color = statusCol(ev_ar_d, q_ar_d, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 10, text = statusTxt(ev_ar_d, q_ar_d), text_color = statusCol(ev_ar_d, q_ar_d, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 9,  dotTxt(ev_utad),    text_color = statusCol(ev_utad, q_utad, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 9,  'Upthrust (UTAD)',  text_color = ev_utad ? redCol : dimCol,      text_size = size.small)
-        table.cell(tbl, 2, 9,  'UT',               text_color = ev_utad ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 9,  statusTxt(ev_utad, q_utad), text_color = statusCol(ev_utad, q_utad, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 11, text = 'ST',    text_color = ev_st_d ? txtCol : dimCol,     width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 11, text = dotTxt(ev_st_d),     text_color = statusCol(ev_st_d, q_st_d, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 11, text = statusTxt(ev_st_d, q_st_d), text_color = statusCol(ev_st_d, q_st_d, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 10, dotTxt(ev_sow),     text_color = statusCol(ev_sow, q_sow, greenCol, orangeCol, redCol, dimCol),       text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 10, 'Sign of Weakness', text_color = ev_sow ? redCol : dimCol,       text_size = size.small)
-        table.cell(tbl, 2, 10, 'SOW',              text_color = ev_sow ? labelCol : dimCol,     text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 10, statusTxt(ev_sow, q_sow), text_color = statusCol(ev_sow, q_sow, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 12, text = 'UTAD',  text_color = ev_utad ? redCol : dimCol,     width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 12, text = dotTxt(ev_utad),     text_color = statusCol(ev_utad, q_utad, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 12, text = statusTxt(ev_utad, q_utad), text_color = statusCol(ev_utad, q_utad, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-        table.cell(tbl, 0, 11, dotTxt(ev_lpsy),    text_color = statusCol(ev_lpsy, q_lpsy, greenCol, orangeCol, redCol, dimCol),     text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 11, 'Last Pt Supply',   text_color = ev_lpsy ? whiteCol : dimCol,    text_size = size.small)
-        table.cell(tbl, 2, 11, 'LPSY',             text_color = ev_lpsy ? labelCol : dimCol,    text_size = size.tiny, text_halign = text.align_center)
-        table.cell(tbl, 3, 11, statusTxt(ev_lpsy, q_lpsy), text_color = statusCol(ev_lpsy, q_lpsy, greenCol, orangeCol, redCol, dimCol), text_size = size.small, text_halign = text.align_right)
+        table.cell(tbl, 1, 13, text = 'SOW',   text_color = ev_sow ? redCol : dimCol,      width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 13, text = dotTxt(ev_sow),      text_color = statusCol(ev_sow, q_sow, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 13, text = statusTxt(ev_sow, q_sow), text_color = statusCol(ev_sow, q_sow, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
+
+        table.cell(tbl, 1, 14, text = 'LPSY',  text_color = ev_lpsy ? txtCol : dimCol,     width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 14, text = dotTxt(ev_lpsy),     text_color = statusCol(ev_lpsy, q_lpsy, greenCol, orangeCol, redCol, dimCol), width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 14, text = statusTxt(ev_lpsy, q_lpsy), text_color = statusCol(ev_lpsy, q_lpsy, greenCol, orangeCol, redCol, dimCol), width = COL_W1, height = COL_H, text_size = TBL_TS)
+
+        // Empty row 15 for dist (1 less event)
+        table.cell(tbl, 1, 15, text = '', width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 15, text = '', width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 15, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
 
     else
-        table.cell(tbl, 0, 6, '○', text_color = dimCol, text_size = size.small, text_halign = text.align_center)
-        table.cell(tbl, 1, 6, 'Scanning for climax...', text_color = dimCol, text_size = size.small)
-        table.cell(tbl, 2, 6, '', text_color = dimCol, text_size = size.tiny)
-        table.cell(tbl, 3, 6, '', text_color = dimCol, text_size = size.small)
+        for r = 8 to 15
+            table.cell(tbl, 1, r, text = r == 8 ? 'Scanning...' : '', text_color = dimCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+            table.cell(tbl, 2, r, text = r == 8 ? '○' : '', text_color = dimCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+            table.cell(tbl, 3, r, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
 
-    // ── Row 13: Separator ──
-    table.cell(tbl, 0, 13, '───', text_color = dimCol, text_size = size.tiny, bgcolor = headerBg)
-    table.cell(tbl, 1, 13, '', bgcolor = headerBg)
-    table.cell(tbl, 2, 13, '', bgcolor = headerBg)
-    table.cell(tbl, 3, 13, '', bgcolor = headerBg)
+    // ── Row 16: VSA header ──
+    table.cell(tbl, 1, 16, text = '𝐕𝐒𝐀 𝐀𝐧𝐚𝐥𝐲𝐬𝐢𝐬', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 16, text = '', width = COL_W3, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 3, 16, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+    table.merge_cells(tbl, 1, 16, 3, 16)
 
-    // ── Row 14: Range Info ──
-    if mode != 0 and not na(rangeHigh) and not na(rangeLow)
-        rangePct = nz(rangeLow) > 0 ? (rangeHigh - rangeLow) / rangeLow * 100 : 0.0
-        table.cell(tbl, 0, 14, 'Range', text_color = labelCol, text_size = size.tiny, bgcolor = sectionBg)
-        table.cell(tbl, 1, 14, str.tostring(rangeLow, '#.2') + '  —  ' + str.tostring(rangeHigh, '#.2'), text_color = whiteCol, text_size = size.tiny, bgcolor = sectionBg)
-        table.cell(tbl, 2, 14, '', bgcolor = sectionBg)
-        table.cell(tbl, 3, 14, str.tostring(rangePct, '#.1') + '%', text_color = labelCol, text_size = size.tiny, bgcolor = sectionBg, text_halign = text.align_right)
+    // ── Row 17: Volume ──
+    vcTxt = volClass == 6 ? 'UH' : volClass == 5 ? 'VH' : volClass == 4 ? 'HIGH' : volClass == 3 ? 'NRM' : volClass == 2 ? 'LOW' : 'VL'
+    vcCol = volClass >= 5 ? goldCol : volClass >= 4 ? greenCol : volClass == 3 ? txtCol : volClass == 2 ? dimCol : purpleCol
+    table.cell(tbl, 1, 17, text = 'Volume', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 17, text = vcTxt, text_color = vcCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 3, 17, text = str.tostring(volRatio, '#.1') + 'x', text_color = vcCol, width = COL_W1, height = COL_H, text_size = TBL_TS)
+
+    // ── Row 18: Effort/Result ──
+    erTxt = effortResult >= 2.0 ? 'HE' : effortResult >= 1.3 ? 'E>R' : effortResult >= 0.7 ? 'BAL' : 'LE'
+    erCol = effortResult >= 1.5 ? cyanCol : effortResult >= 1.0 ? txtCol : orangeCol
+    table.cell(tbl, 1, 18, text = 'Effort/R', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 18, text = erTxt, text_color = erCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 3, 18, text = str.tostring(effortResult, '#.2'), text_color = erCol, width = COL_W1, height = COL_H, text_size = TBL_TS)
+
+    // ── Row 19: Position ──
+    ppTxt = mode == 1 and not na(rangeLow) and low <= rangeLow + atr * 0.5 ? 'SPRING ZONE' : mode == 2 and not na(rangeHigh) and high >= rangeHigh - atr * 0.5 ? 'UPTHRUST ZONE' : mode != 0 and not na(rangeLow) and close <= nz(rangeLow) * 1.01 ? 'AT SUPPORT' : mode != 0 and not na(rangeHigh) and close >= nz(rangeHigh) * 0.99 ? 'AT RESISTANCE' : mode != 0 ? 'IN RANGE' : '—'
+    ppCol = ppTxt == 'SPRING ZONE' ? greenCol : ppTxt == 'UPTHRUST ZONE' ? redCol : ppTxt == 'AT SUPPORT' ? cyanCol : ppTxt == 'AT RESISTANCE' ? orangeCol : ppTxt == 'IN RANGE' ? txtCol : dimCol
+    table.cell(tbl, 1, 19, text = 'Position', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 2, 19, text = ppTxt, text_color = ppCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+    table.cell(tbl, 3, 19, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+    table.merge_cells(tbl, 2, 19, 3, 19)
+
+    // ── Row 20: Range High ──
+    if mode != 0 and not na(rangeHigh)
+        table.cell(tbl, 1, 20, text = 'Range High', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 20, text = str.tostring(rangeHigh, '#.2'), text_color = redCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 20, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+        table.merge_cells(tbl, 2, 20, 3, 20)
     else
-        table.cell(tbl, 0, 14, 'Range', text_color = dimCol, text_size = size.tiny, bgcolor = sectionBg)
-        table.cell(tbl, 1, 14, '—', text_color = dimCol, text_size = size.tiny, bgcolor = sectionBg)
-        table.cell(tbl, 2, 14, '', bgcolor = sectionBg)
-        table.cell(tbl, 3, 14, '', bgcolor = sectionBg)
+        table.cell(tbl, 1, 20, text = 'Range High', text_color = dimCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 20, text = '—', text_color = dimCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 20, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+        table.merge_cells(tbl, 2, 20, 3, 20)
+
+    // ── Row 21: Range Low ──
+    if mode != 0 and not na(rangeLow)
+        table.cell(tbl, 1, 21, text = 'Range Low', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 21, text = str.tostring(rangeLow, '#.2'), text_color = greenCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 21, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+        table.merge_cells(tbl, 2, 21, 3, 21)
+    else
+        table.cell(tbl, 1, 21, text = 'Range Low', text_color = dimCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 21, text = '—', text_color = dimCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 21, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+        table.merge_cells(tbl, 2, 21, 3, 21)
+
+    // ── Row 22: Range Width ──
+    if mode != 0 and not na(rangeHigh) and not na(rangeLow) and nz(rangeLow) > 0
+        rangePct = (rangeHigh - rangeLow) / rangeLow * 100
+        table.cell(tbl, 1, 22, text = 'Range Width', text_color = txtCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 22, text = str.tostring(rangePct, '#.1') + '%', text_color = labelCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 22, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+        table.merge_cells(tbl, 2, 22, 3, 22)
+    else
+        table.cell(tbl, 1, 22, text = 'Range Width', text_color = dimCol, width = COL_W2, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 2, 22, text = '—', text_color = dimCol, width = COL_W3, height = COL_H, text_size = TBL_TS)
+        table.cell(tbl, 3, 22, text = '', width = COL_W1, height = COL_H, text_size = TBL_TS)
+        table.merge_cells(tbl, 2, 22, 3, 22)
+
+// ============================== LEGEND ==============================
+
+if i_showLegend and barstate.islast
+    LEG_ROWS = 23
+    var table leg = table.new(position.bottom_left, 4, LEG_ROWS,
+         bgcolor = BG,
+         border_color = BR,
+         border_width = 2,
+         frame_color = FR,
+         frame_width = 4)
+
+    legDim   = color.rgb(90, 90, 100)
+    legLabel = color.rgb(140, 140, 155)
+    lS       = LEG_TS
+    lC       = text.align_center
+
+    // Row 0: Header (merged all 4 cols)
+    table.cell(leg, 0, 0, '⚜️ Legend ⚜️', text_color = color.rgb(218, 165, 32), text_size = TBL_HDR, bgcolor = BG)
+    table.cell(leg, 1, 0, '', text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 0, '', text_size = lS, bgcolor = BG)
+    table.cell(leg, 3, 0, '', text_size = lS, bgcolor = BG)
+    table.merge_cells(leg, 0, 0, 3, 0)
+
+    // ── Row 1: Bar Colors | Symbols headers ──
+    table.cell(leg, 0, 1, 'Bar Colors', text_color = legDim, text_size = lS, bgcolor = BG)
+    table.cell(leg, 1, 1, '', text_size = lS, bgcolor = BG)
+    table.merge_cells(leg, 0, 1, 1, 1)
+    table.cell(leg, 2, 1, 'Symbols', text_color = legDim, text_size = lS, bgcolor = BG)
+    table.cell(leg, 3, 1, '', text_size = lS, bgcolor = BG)
+    table.merge_cells(leg, 2, 1, 3, 1)
+
+    // Rows 2-6: Bar Colors left | Symbols right
+    table.cell(leg, 0, 2, '■', text_color = color.rgb(255, 215, 0),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 2, 'Ultra High (>2.2x)',    text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 2, '◆', text_color = color.rgb(0, 230, 118),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 2, 'Vol Spike (bull)',       text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 3, '■', text_color = color.rgb(0, 200, 100),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 3, 'Bullish (>1.2x)',       text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 3, '◆', text_color = color.rgb(255, 82, 82),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 3, 'Vol Spike (bear)',       text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 4, '■', text_color = color.rgb(220, 50, 50),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 4, 'Bearish (>1.2x)',       text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 4, '✕', text_color = color.rgb(255, 165, 0, 40), text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 4, 'No Demand',             text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 5, '■', text_color = color.rgb(130, 80, 180),  text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 5, 'Declining (<0.4x)',     text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 5, '✕', text_color = color.rgb(0, 180, 255, 40), text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 5, 'No Supply',             text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 6, '■', text_color = color.rgb(180, 180, 180), text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 6, 'No Demand/Supply',      text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 6, '', text_size = lS, bgcolor = BG)
+    table.cell(leg, 3, 6, '', text_size = lS, bgcolor = BG)
+
+    // ── Row 7: Volume | Effort/Result headers ──
+    table.cell(leg, 0, 7, 'Volume', text_color = legDim, text_size = lS, bgcolor = BG)
+    table.cell(leg, 1, 7, '', text_size = lS, bgcolor = BG)
+    table.merge_cells(leg, 0, 7, 1, 7)
+    table.cell(leg, 2, 7, 'Effort / Result', text_color = legDim, text_size = lS, bgcolor = BG)
+    table.cell(leg, 3, 7, '', text_size = lS, bgcolor = BG)
+    table.merge_cells(leg, 2, 7, 3, 7)
+
+    // Rows 8-13: Volume left | E/R right
+    table.cell(leg, 0, 8,  'UH',   text_color = color.rgb(218, 165, 32),  text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 8,  'Ultra High (>2.2x)',   text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 8,  'HE',   text_color = color.rgb(0, 200, 255),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 8,  'High Effort (>2.0)',   text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 9,  'VH',   text_color = color.rgb(218, 165, 32),  text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 9,  'Very High (>1.8x)',    text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 9,  'E>R',  text_color = color.rgb(0, 200, 255),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 9,  'Effort > Result',      text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 10, 'HIGH', text_color = color.rgb(0, 230, 118),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 10, 'High (>1.2x)',         text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 10, 'BAL',  text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 10, 'Balanced',              text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 11, 'NRM',  text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 11, 'Normal (0.8x–1.2x)',   text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 11, 'LE',   text_color = color.rgb(255, 165, 0),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 11, 'Low Effort',            text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 12, 'LOW',  text_color = color.rgb(90, 90, 100),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 12, 'Low (<0.8x)',           text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 12, '', text_size = lS, bgcolor = BG)
+    table.cell(leg, 3, 12, '', text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 13, 'VL',   text_color = color.rgb(180, 120, 255), text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 13, 'Very Low (<0.4x)',      text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 13, '', text_size = lS, bgcolor = BG)
+    table.cell(leg, 3, 13, '', text_size = lS, bgcolor = BG)
+
+    // ── Row 14: Accumulation | Distribution headers ──
+    table.cell(leg, 0, 14, 'Accumulation', text_color = legDim, text_size = lS, bgcolor = BG)
+    table.cell(leg, 1, 14, '', text_size = lS, bgcolor = BG)
+    table.merge_cells(leg, 0, 14, 1, 14)
+    table.cell(leg, 2, 14, 'Distribution', text_color = legDim, text_size = lS, bgcolor = BG)
+    table.cell(leg, 3, 14, '', text_size = lS, bgcolor = BG)
+    table.merge_cells(leg, 2, 14, 3, 14)
+
+    // Rows 15-22: Accum left | Dist right
+    table.cell(leg, 0, 15, 'PS',   text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 15, 'Prelim Support',        text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 15, 'PSY',  text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 15, 'Prelim Supply',         text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 16, 'SC',   text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 16, 'Selling Climax',        text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 16, 'BC',   text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 16, 'Buying Climax',         text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 17, 'AR',   text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 17, 'Auto Rally',            text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 17, 'AR',   text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 17, 'Auto Reaction',         text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 18, 'ST',   text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 18, 'Secondary Test',        text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 18, 'ST',   text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 18, 'Secondary Test',        text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 19, 'SPR',  text_color = color.rgb(0, 230, 118),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 19, 'Spring',                text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 19, 'UTAD', text_color = color.rgb(255, 82, 82),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 19, 'Upthrust',              text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 20, 'TST',  text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 20, 'Test',                  text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 20, 'SOW',  text_color = color.rgb(255, 82, 82),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 20, 'Sign of Weakness',      text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 21, 'SOS',  text_color = color.rgb(0, 230, 118),   text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 21, 'Sign of Strength',      text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 21, 'LPSY', text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 3, 21, 'Last Pt Supply',        text_color = legLabel, text_size = lS, bgcolor = BG)
+
+    table.cell(leg, 0, 22, 'LPS',  text_color = color.silver,             text_size = lS, bgcolor = BG, text_halign = lC)
+    table.cell(leg, 1, 22, 'Last Pt Support',       text_color = legLabel, text_size = lS, bgcolor = BG)
+    table.cell(leg, 2, 22, '', text_size = lS, bgcolor = BG)
+    table.cell(leg, 3, 22, '', text_size = lS, bgcolor = BG)
 
 // ============================== ALERTS ==============================
 
+alertcondition(det_ps, 'Preliminary Support (PS)', 'Wyckoff PS detected — early institutional buying')
 alertcondition(det_sc, 'Selling Climax (SC)', 'Wyckoff SC detected — potential accumulation starting')
 alertcondition(det_spring_lv or det_spring_hv or det_spring_ok, 'Spring', 'Wyckoff Spring detected — potential reversal')
 alertcondition(det_sos, 'Sign of Strength (SOS)', 'Wyckoff SOS detected — markup likely')
+alertcondition(det_psy, 'Preliminary Supply (PSY)', 'Wyckoff PSY detected — early institutional selling')
 alertcondition(det_bc, 'Buying Climax (BC)', 'Wyckoff BC detected — potential distribution starting')
 alertcondition(det_utad, 'UTAD', 'Wyckoff UTAD detected — potential reversal')
 alertcondition(det_sow, 'Sign of Weakness (SOW)', 'Wyckoff SOW detected — markdown likely')
+alertcondition(isVolSpike, 'Volume Spike', 'Statistical volume spike detected — institutional activity')
+alertcondition(isNoDemand, 'No Demand', 'No Demand detected — low volume up bar, bearish warning')
+alertcondition(isNoSupply, 'No Supply', 'No Supply detected — low volume down bar, bullish signal')
